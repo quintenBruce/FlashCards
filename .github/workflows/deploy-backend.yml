@@ -1,0 +1,56 @@
+name: Deploy Firebase backend
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: flashcards-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      ${{ github.repository == 'quintenBruce/FlashCards' &&
+          vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' &&
+          vars.GCP_DEPLOY_SERVICE_ACCOUNT != '' &&
+          vars.OWNER_EMAIL != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.25.0'
+
+      - name: Install pinned dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile Functions
+        run: pnpm run build:functions
+
+      - name: Authenticate to flashcards-6b1ac
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: flashcards-6b1ac
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Configure Functions
+        env:
+          OWNER_EMAIL: ${{ vars.OWNER_EMAIL }}
+        run: |
+          test -n "$OWNER_EMAIL"
+          printf 'FUNCTIONS_REGION=us-south1\nOPENAI_CHAT_MODEL=gpt-6.1-sol\nOPENAI_GRADE_MODEL=gpt-6-luna\nAI_MONTHLY_MICRO_USD=10000000\nOWNER_EMAIL=%s\n' "$OWNER_EMAIL" > functions/.env
+
+      - name: Deploy Functions, Firestore rules, and indexes
+        run: npx -y firebase-tools@latest deploy --only "functions:flashcards,firestore" --project flashcards-6b1ac --non-interactive
