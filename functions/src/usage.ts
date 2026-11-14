@@ -1,4 +1,5 @@
 import { HttpsError } from 'firebase-functions/v2/https';
+import { logger } from 'firebase-functions';
 import { budgetMonth } from '../../shared/src/schedule';
 import { cost, reserveAmount } from '../../shared/src/budget';
 import { db, root } from './core';
@@ -30,4 +31,5 @@ export async function settle(uid: string, requestId: string, model: string, inpu
     tx.update(ledger, { spent, reserved, warning: spent + reserved >= usage.get('cap') * .8, updatedAt: Date.now() });
     tx.update(reservation, { state: 'settled', actual, inputTokens: input, outputTokens: output, updatedAt: Date.now() });
   });
+  logger.info('ai.usage', { requestId, model, inputTokens: input, outputTokens: output });
 }

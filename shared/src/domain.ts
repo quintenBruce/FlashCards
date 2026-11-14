@@ -8,7 +8,7 @@ export interface Deck {
 export interface Card {
   id: string; deckId: string; term: string; definition: string; explanation: string; example: string;
   termAlternatives: string[]; definitionAlternatives: string[]; starred: boolean; order: number;
-  version: number; deletedAt: number | null; updatedAt: number;
+  version: number; contentVersion?: number; deletedAt: number | null; updatedAt: number;
 }
 export interface Progress {
   id: string; cardId: string; direction: Direction; confidence: Confidence; cardVersion: number;

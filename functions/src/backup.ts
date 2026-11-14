@@ -17,7 +17,7 @@ export async function restorePage(uid: string, data: Record<string, any>) {
   const rows = data.rows.map((raw: unknown) => {
     const r = object(raw), recordId = id(r.id);
     if (collection === 'decks') return { ...deckData(r), id: recordId, version: integer(r.version,1), deletedAt: r.deletedAt == null ? null : integer(r.deletedAt), updatedAt: Date.now() };
-    if (collection === 'cards') return { ...cardData(r), id: recordId, version: integer(r.version,1), deletedAt: r.deletedAt == null ? null : integer(r.deletedAt), updatedAt: Date.now() };
+    if (collection === 'cards') return { ...cardData(r), id: recordId, version: integer(r.version,1), contentVersion: integer(r.contentVersion || r.version,1), deletedAt: r.deletedAt == null ? null : integer(r.deletedAt), updatedAt: Date.now() };
     if (collection === 'reminders') return { ...r, id: recordId, enabled: false, nextAt: null, updatedAt: Date.now() };
     return { ...r, id: recordId };
   });

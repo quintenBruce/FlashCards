@@ -32,15 +32,19 @@ export const updateDevice = callable('updateDevice', registerDevice);
 export const exportBackupPage = callable('exportBackupPage', exportPage);
 export const restoreBackupPage = callable('restoreBackupPage', restorePage);
 export const deleteConversation = callable('deleteConversation', async (uid, data) => {
-  const conversationId = id(data.id), turns = await root(uid).collection('turns').where('conversationId','==',conversationId).get();
+  const conversationId = id(data.id);
+  const conversationRef = root(uid).collection('conversations').doc(conversationId);
+  const current = await conversationRef.get();
+  await conversationRef.set({ id: conversationId, deckId: current.get('deckId') || '', deletedAt: Date.now() }, { merge: true });
+  const turns = await root(uid).collection('turns').where('conversationId','==',conversationId).get();
   for (const turn of turns.docs) await turn.ref.delete();
   const proposals = await root(uid).collection('proposals').where('conversationId','==',conversationId).get();
   for (const proposal of proposals.docs) await proposal.ref.delete();
-  await root(uid).collection('conversations').doc(conversationId).delete(); return { removed: true };
+  return { removed: true };
 });
 export const deleteAccount = callable('deleteAccount', async (uid, data) => {
   if (data.confirm !== 'DELETE') throw new HttpsError('invalid-argument', 'Type DELETE to confirm');
-  await db.collection('access').doc(uid).set({ enabled: false, deletionRequested: true }, { merge: true });
+  await db.collection('access').doc(uid).set({ enabled: false, deletionRequested: true, deletionRequestedAt: Date.now() }, { merge: true });
   return { deletionRequested: true };
 });
 export const dispatchReminders = onSchedule({ region, schedule: '* * * * *', maxInstances: 1, timeoutSeconds: 540 }, dispatchDue);

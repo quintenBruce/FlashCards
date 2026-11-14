@@ -1,0 +1,1206 @@
+{
+  "schemaVersion": 1,
+  "reviewedBy": null,
+  "cases": [
+    {
+      "id": "translation_1_en_es",
+      "prompt": "car",
+      "expected": [
+        "coche"
+      ],
+      "answer": "carro",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_1_es_en",
+      "prompt": "coche",
+      "expected": [
+        "car"
+      ],
+      "answer": "automobile",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_2_en_es",
+      "prompt": "computer",
+      "expected": [
+        "ordenador"
+      ],
+      "answer": "computadora",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_2_es_en",
+      "prompt": "ordenador",
+      "expected": [
+        "computer"
+      ],
+      "answer": "PC",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_3_en_es",
+      "prompt": "cell phone",
+      "expected": [
+        "teléfono móvil"
+      ],
+      "answer": "celular",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_3_es_en",
+      "prompt": "teléfono móvil",
+      "expected": [
+        "cell phone"
+      ],
+      "answer": "mobile phone",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_4_en_es",
+      "prompt": "bus",
+      "expected": [
+        "autobús"
+      ],
+      "answer": "camión",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_4_es_en",
+      "prompt": "autobús",
+      "expected": [
+        "bus"
+      ],
+      "answer": "coach",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_5_en_es",
+      "prompt": "glasses",
+      "expected": [
+        "gafas"
+      ],
+      "answer": "lentes",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_5_es_en",
+      "prompt": "gafas",
+      "expected": [
+        "glasses"
+      ],
+      "answer": "eyeglasses",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_6_en_es",
+      "prompt": "pen",
+      "expected": [
+        "bolígrafo"
+      ],
+      "answer": "pluma",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_6_es_en",
+      "prompt": "bolígrafo",
+      "expected": [
+        "pen"
+      ],
+      "answer": "ballpoint pen",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_7_en_es",
+      "prompt": "apartment",
+      "expected": [
+        "apartamento"
+      ],
+      "answer": "departamento",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_7_es_en",
+      "prompt": "apartamento",
+      "expected": [
+        "apartment"
+      ],
+      "answer": "flat",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_8_en_es",
+      "prompt": "sidewalk",
+      "expected": [
+        "acera"
+      ],
+      "answer": "banqueta",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_8_es_en",
+      "prompt": "acera",
+      "expected": [
+        "sidewalk"
+      ],
+      "answer": "pavement",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_9_en_es",
+      "prompt": "juice",
+      "expected": [
+        "jugo"
+      ],
+      "answer": "zumo",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_9_es_en",
+      "prompt": "jugo",
+      "expected": [
+        "juice"
+      ],
+      "answer": "fruit juice",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_10_en_es",
+      "prompt": "peanut",
+      "expected": [
+        "cacahuate"
+      ],
+      "answer": "maní",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_10_es_en",
+      "prompt": "cacahuate",
+      "expected": [
+        "peanut"
+      ],
+      "answer": "groundnut",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_11_en_es",
+      "prompt": "avocado",
+      "expected": [
+        "aguacate"
+      ],
+      "answer": "palta",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_11_es_en",
+      "prompt": "aguacate",
+      "expected": [
+        "avocado"
+      ],
+      "answer": "avocado pear",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_12_en_es",
+      "prompt": "potato",
+      "expected": [
+        "papa"
+      ],
+      "answer": "patata",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_12_es_en",
+      "prompt": "papa",
+      "expected": [
+        "potato"
+      ],
+      "answer": "potato",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_13_en_es",
+      "prompt": "peach",
+      "expected": [
+        "durazno"
+      ],
+      "answer": "melocotón",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_13_es_en",
+      "prompt": "durazno",
+      "expected": [
+        "peach"
+      ],
+      "answer": "peach",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_14_en_es",
+      "prompt": "strawberry",
+      "expected": [
+        "fresa"
+      ],
+      "answer": "frutilla",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_14_es_en",
+      "prompt": "fresa",
+      "expected": [
+        "strawberry"
+      ],
+      "answer": "strawberry",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_15_en_es",
+      "prompt": "bean",
+      "expected": [
+        "frijol"
+      ],
+      "answer": "judía",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_15_es_en",
+      "prompt": "frijol",
+      "expected": [
+        "bean"
+      ],
+      "answer": "bean",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_16_en_es",
+      "prompt": "to drive",
+      "expected": [
+        "conducir"
+      ],
+      "answer": "manejar",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_16_es_en",
+      "prompt": "conducir",
+      "expected": [
+        "to drive"
+      ],
+      "answer": "to operate a vehicle",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_17_en_es",
+      "prompt": "to return",
+      "expected": [
+        "volver"
+      ],
+      "answer": "regresar",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_17_es_en",
+      "prompt": "volver",
+      "expected": [
+        "to return"
+      ],
+      "answer": "to come back",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_18_en_es",
+      "prompt": "to begin",
+      "expected": [
+        "empezar"
+      ],
+      "answer": "comenzar",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_18_es_en",
+      "prompt": "empezar",
+      "expected": [
+        "to begin"
+      ],
+      "answer": "to start",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_19_en_es",
+      "prompt": "to finish",
+      "expected": [
+        "terminar"
+      ],
+      "answer": "acabar",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_19_es_en",
+      "prompt": "terminar",
+      "expected": [
+        "to finish"
+      ],
+      "answer": "to end",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_20_en_es",
+      "prompt": "happy",
+      "expected": [
+        "feliz"
+      ],
+      "answer": "contento",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_20_es_en",
+      "prompt": "feliz",
+      "expected": [
+        "happy"
+      ],
+      "answer": "glad",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_21_en_es",
+      "prompt": "beautiful",
+      "expected": [
+        "hermoso"
+      ],
+      "answer": "bonito",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_21_es_en",
+      "prompt": "hermoso",
+      "expected": [
+        "beautiful"
+      ],
+      "answer": "pretty",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_22_en_es",
+      "prompt": "angry",
+      "expected": [
+        "enojado"
+      ],
+      "answer": "enfadado",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_22_es_en",
+      "prompt": "enojado",
+      "expected": [
+        "angry"
+      ],
+      "answer": "mad",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_23_en_es",
+      "prompt": "tired",
+      "expected": [
+        "cansado"
+      ],
+      "answer": "fatigado",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_23_es_en",
+      "prompt": "cansado",
+      "expected": [
+        "tired"
+      ],
+      "answer": "weary",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_24_en_es",
+      "prompt": "fast",
+      "expected": [
+        "rápido"
+      ],
+      "answer": "veloz",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_24_es_en",
+      "prompt": "rápido",
+      "expected": [
+        "fast"
+      ],
+      "answer": "quick",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_25_en_es",
+      "prompt": "slow",
+      "expected": [
+        "lento"
+      ],
+      "answer": "despacio",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_25_es_en",
+      "prompt": "lento",
+      "expected": [
+        "slow"
+      ],
+      "answer": "unhurried",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_26_en_es",
+      "prompt": "help",
+      "expected": [
+        "ayuda"
+      ],
+      "answer": "auxilio",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_26_es_en",
+      "prompt": "ayuda",
+      "expected": [
+        "help"
+      ],
+      "answer": "assistance",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_27_en_es",
+      "prompt": "job",
+      "expected": [
+        "trabajo"
+      ],
+      "answer": "empleo",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_27_es_en",
+      "prompt": "trabajo",
+      "expected": [
+        "job"
+      ],
+      "answer": "employment",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_28_en_es",
+      "prompt": "money",
+      "expected": [
+        "dinero"
+      ],
+      "answer": "plata",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_28_es_en",
+      "prompt": "dinero",
+      "expected": [
+        "money"
+      ],
+      "answer": "cash",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_29_en_es",
+      "prompt": "child",
+      "expected": [
+        "niño"
+      ],
+      "answer": "chico",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_29_es_en",
+      "prompt": "niño",
+      "expected": [
+        "child"
+      ],
+      "answer": "kid",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_30_en_es",
+      "prompt": "friend",
+      "expected": [
+        "amigo"
+      ],
+      "answer": "compañero",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_30_es_en",
+      "prompt": "amigo",
+      "expected": [
+        "friend"
+      ],
+      "answer": "pal",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_31_en_es",
+      "prompt": "teacher",
+      "expected": [
+        "profesor"
+      ],
+      "answer": "maestro",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_31_es_en",
+      "prompt": "profesor",
+      "expected": [
+        "teacher"
+      ],
+      "answer": "instructor",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_32_en_es",
+      "prompt": "doctor",
+      "expected": [
+        "médico"
+      ],
+      "answer": "doctor",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_32_es_en",
+      "prompt": "médico",
+      "expected": [
+        "doctor"
+      ],
+      "answer": "physician",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_33_en_es",
+      "prompt": "bedroom",
+      "expected": [
+        "dormitorio"
+      ],
+      "answer": "habitación",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_33_es_en",
+      "prompt": "dormitorio",
+      "expected": [
+        "bedroom"
+      ],
+      "answer": "sleeping room",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_34_en_es",
+      "prompt": "store",
+      "expected": [
+        "tienda"
+      ],
+      "answer": "comercio",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_34_es_en",
+      "prompt": "tienda",
+      "expected": [
+        "store"
+      ],
+      "answer": "shop",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_35_en_es",
+      "prompt": "food",
+      "expected": [
+        "comida"
+      ],
+      "answer": "alimento",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_35_es_en",
+      "prompt": "comida",
+      "expected": [
+        "food"
+      ],
+      "answer": "nourishment",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_36_en_es",
+      "prompt": "to talk",
+      "expected": [
+        "hablar"
+      ],
+      "answer": "conversar",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_36_es_en",
+      "prompt": "hablar",
+      "expected": [
+        "to talk"
+      ],
+      "answer": "to converse",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_37_en_es",
+      "prompt": "to need",
+      "expected": [
+        "necesitar"
+      ],
+      "answer": "requerir",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_37_es_en",
+      "prompt": "necesitar",
+      "expected": [
+        "to need"
+      ],
+      "answer": "to require",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_38_en_es",
+      "prompt": "to understand",
+      "expected": [
+        "entender"
+      ],
+      "answer": "comprender",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_38_es_en",
+      "prompt": "entender",
+      "expected": [
+        "to understand"
+      ],
+      "answer": "to comprehend",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_39_en_es",
+      "prompt": "maybe",
+      "expected": [
+        "quizás"
+      ],
+      "answer": "tal vez",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_39_es_en",
+      "prompt": "quizás",
+      "expected": [
+        "maybe"
+      ],
+      "answer": "perhaps",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "translation_40_en_es",
+      "prompt": "thank you",
+      "expected": [
+        "gracias"
+      ],
+      "answer": "muchas gracias",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Accept natural regional synonym if context permits; mark ambiguous prompts needs_review."
+    },
+    {
+      "id": "translation_40_es_en",
+      "prompt": "gracias",
+      "expected": [
+        "thank you"
+      ],
+      "answer": "thanks",
+      "variety": "es-419",
+      "verdict": "correct",
+      "reviewStatus": "needs_human_review",
+      "notes": "Check context and part of speech, not literal matching."
+    },
+    {
+      "id": "contrast_1",
+      "prompt": "year",
+      "expected": [
+        "año"
+      ],
+      "answer": "ano",
+      "verdict": "incorrect",
+      "notes": "ñ changes meaning",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_2",
+      "prompt": "yes",
+      "expected": [
+        "sí"
+      ],
+      "answer": "si",
+      "verdict": "incorrect",
+      "notes": "Accent changes meaning",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_3",
+      "prompt": "he",
+      "expected": [
+        "él"
+      ],
+      "answer": "el",
+      "verdict": "incorrect",
+      "notes": "Pronoun versus article",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_4",
+      "prompt": "tea",
+      "expected": [
+        "té"
+      ],
+      "answer": "te",
+      "verdict": "incorrect",
+      "notes": "Noun versus pronoun",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_5",
+      "prompt": "I don't want coffee",
+      "expected": [
+        "No quiero café"
+      ],
+      "answer": "Quiero café",
+      "verdict": "incorrect",
+      "notes": "Negation must be preserved",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_6",
+      "prompt": "I went yesterday",
+      "expected": [
+        "Fui ayer"
+      ],
+      "answer": "Voy mañana",
+      "verdict": "incorrect",
+      "notes": "Tense and time changed",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_7",
+      "prompt": "I am embarrassed",
+      "expected": [
+        "Estoy avergonzado"
+      ],
+      "answer": "Estoy embarazado",
+      "verdict": "incorrect",
+      "notes": "False friend",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_8",
+      "prompt": "actually",
+      "expected": [
+        "en realidad"
+      ],
+      "answer": "actualmente",
+      "verdict": "incorrect",
+      "notes": "False friend",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_9",
+      "prompt": "library",
+      "expected": [
+        "biblioteca"
+      ],
+      "answer": "librería",
+      "verdict": "incorrect",
+      "notes": "False friend",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_10",
+      "prompt": "to attend a meeting",
+      "expected": [
+        "asistir a una reunión"
+      ],
+      "answer": "atender una reunión",
+      "verdict": "needs_review",
+      "notes": "Context can change acceptability; do not overrule uncertainty",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_11",
+      "prompt": "I hope he comes",
+      "expected": [
+        "Espero que venga"
+      ],
+      "answer": "Espero que viene",
+      "verdict": "partial",
+      "notes": "Subjunctive error",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_12",
+      "prompt": "The houses are red",
+      "expected": [
+        "Las casas son rojas"
+      ],
+      "answer": "Las casas son rojo",
+      "verdict": "partial",
+      "notes": "Agreement error",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_13",
+      "prompt": "Good morning",
+      "expected": [
+        "Buenos días"
+      ],
+      "answer": "Buenoz días",
+      "verdict": "partial",
+      "notes": "Minor orthographic error",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_14",
+      "prompt": "Where is the bathroom?",
+      "expected": [
+        "¿Dónde está el baño?"
+      ],
+      "answer": "¿Dónde queda el baño?",
+      "verdict": "correct",
+      "notes": "Natural Latin American phrasing",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_15",
+      "prompt": "I miss you",
+      "expected": [
+        "Te extraño"
+      ],
+      "answer": "Te echo de menos",
+      "verdict": "correct",
+      "notes": "Both regional variants valid",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_16",
+      "prompt": "I am hot",
+      "expected": [
+        "Tengo calor"
+      ],
+      "answer": "Estoy caliente",
+      "verdict": "incorrect",
+      "notes": "Meaning differs in ordinary temperature context",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_17",
+      "prompt": "bank",
+      "expected": [
+        "banco"
+      ],
+      "answer": "orilla",
+      "verdict": "needs_review",
+      "notes": "English prompt has multiple senses",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_18",
+      "prompt": "you",
+      "expected": [
+        "tú"
+      ],
+      "answer": "usted",
+      "verdict": "needs_review",
+      "notes": "Register and number not specified",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_19",
+      "prompt": "I have been here for two years",
+      "expected": [
+        "Llevo aquí dos años"
+      ],
+      "answer": "Estoy aquí desde hace dos años",
+      "verdict": "correct",
+      "notes": "Accept equivalent construction",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    },
+    {
+      "id": "contrast_20",
+      "prompt": "to realize",
+      "expected": [
+        "darse cuenta"
+      ],
+      "answer": "realizar",
+      "verdict": "incorrect",
+      "notes": "False friend",
+      "variety": "es-419",
+      "reviewStatus": "needs_human_review"
+    }
+  ]
+}

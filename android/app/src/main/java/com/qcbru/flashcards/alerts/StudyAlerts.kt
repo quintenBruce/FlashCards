@@ -46,7 +46,8 @@ object StudyAlerts {
     private fun schedule(context: Context, uid: String, reminderId: String, occurrence: String, scheduledAt: Long, triggerAt: Long) {
         context.getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,
             maxOf(System.currentTimeMillis()+1000,triggerAt),alarm(context,uid,reminderId,occurrence,scheduledAt,triggerAt))
-        repository(context).dao.put(StoredDocument(uid,"alarms",occurrence,mapOf("reminderId" to reminderId,"scheduledAt" to scheduledAt,"triggerAt" to triggerAt).toJson().toString()))
+        val version = repository(context).dao.get(uid,"reminders",reminderId)?.let { Codec.decodeFromString<StudyReminder>(it.body).version } ?: 0
+        repository(context).dao.put(StoredDocument(uid,"alarms",occurrence,mapOf("reminderId" to reminderId,"scheduledAt" to scheduledAt,"triggerAt" to triggerAt,"version" to version).toJson().toString()))
     }
     fun cancelAll(context: Context, uid: String) {
         val repo = repository(context)
@@ -59,6 +60,7 @@ object StudyAlerts {
     fun reschedule(context: Context, uid: String) {
         val repo = repository(context); val now = System.currentTimeMillis()
         val snoozes = repo.dao.list(uid,"local_snoozes")
+        val previous = repo.dao.list(uid,"alarms")
         cancelAll(context,uid)
         for (row in repo.dao.list(uid,"reminders")) {
             val r = Codec.decodeFromString<StudyReminder>(row.body)
@@ -67,17 +69,30 @@ object StudyAlerts {
                 ?: ReminderClock.next(r.schedule,now) ?: continue
             schedule(context,uid,r.id,"${r.id}_$at",at,at)
         }
+        // Preserve a due local fallback after the dispatcher advances nextAt. Manual
+        // edits/deletion change the reminder version and invalidate the old alarm.
+        for (row in previous) {
+            val d = Codec.parseToJsonElement(row.body).toCloud() as Map<*,*>
+            val r = repo.dao.get(uid,"reminders",d["reminderId"] as String)?.let { Codec.decodeFromString<StudyReminder>(it.body) } ?: continue
+            val at = (d["triggerAt"] as Number).toLong()
+            if (at <= now && at > now-3600000 && (d["version"] as? Number)?.toInt() == r.version && repo.dao.get(uid,"delivered",row.id) == null) {
+                schedule(context,uid,r.id,row.id,(d["scheduledAt"] as Number).toLong(),at)
+            }
+        }
         for (row in snoozes) {
             val d = Codec.parseToJsonElement(row.body).toCloud() as Map<*,*>
             val at = (d["at"] as Number).toLong()
             if (at > now - 3600000 && repo.dao.get(uid,"delivered",row.id) == null) schedule(context,uid,d["reminderId"] as String,row.id,(d["scheduledAt"] as Number).toLong(),at)
         }
     }
-    fun show(context: Context, uid: String, reminderId: String, occurrence: String, scheduledAt: Long) {
+    @Synchronized fun show(context: Context, uid: String, reminderId: String, occurrence: String, scheduledAt: Long) {
         val repo = repository(context)
         if (repo.uid != uid || repo.dao.get(uid,"delivered",occurrence) != null) return
         val r = repo.dao.get(uid,"reminders",reminderId)?.let { Codec.decodeFromString<StudyReminder>(it.body) } ?: return
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            repo.dao.put(StoredDocument(uid,"delivered",occurrence,"{\"reason\":\"permission_denied\"}"))
+            return
+        }
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL,"Study reminders",NotificationManager.IMPORTANCE_DEFAULT))
         val open = Intent(context,MainActivity::class.java).apply {
@@ -98,10 +113,11 @@ object StudyAlerts {
     }
     fun snooze(context: Context, uid: String, reminderId: String, occurrence: String, scheduledAt: Long) {
         val repo = repository(context); if (repo.uid != uid) return
-        val requestId = "snooze_${occurrence.hashCode().toUInt()}"; val at = System.currentTimeMillis()+15*60000
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(occurrence.toByteArray()).take(16).joinToString(""){"%02x".format(it)}
+        val requestId = "snooze_$digest"; val at = System.currentTimeMillis()+15*60000
         if (repo.dao.get(uid,"local_snoozes","snooze_$requestId") != null) return
         repo.dao.put(StoredDocument(uid,"local_snoozes","snooze_$requestId",mapOf("reminderId" to reminderId,"scheduledAt" to scheduledAt,"at" to at).toJson().toString()))
-        repo.dao.put(StoredDocument(uid,"reminder_pending",requestId,mapOf("id" to reminderId,"requestId" to requestId,"action" to "snooze","scheduledAt" to scheduledAt).toJson().toString()))
+        repo.dao.put(StoredDocument(uid,"reminder_pending",requestId,mapOf("id" to reminderId,"requestId" to requestId,"action" to "snooze","scheduledAt" to scheduledAt,"snoozeAt" to at).toJson().toString()))
         context.getSystemService(NotificationManager::class.java).cancel(occurrence.hashCode())
         schedule(context,uid,reminderId,"snooze_$requestId",scheduledAt,at)
         SyncWorker.enqueue(context)

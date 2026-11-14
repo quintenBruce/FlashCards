@@ -13,7 +13,7 @@ export async function syncReview(uid: string, data: Record<string, any>) {
     const [prior, card, current] = await Promise.all([tx.get(event), tx.get(cardRef), tx.get(progress)]);
     sameRequest(prior, fingerprint); if (prior.exists) return prior.get('result');
     const parent = card.exists ? await tx.get(root(uid).collection('decks').doc(card.get('deckId'))) : null;
-    const unchanged = card.exists && card.get('deletedAt') == null && card.get('version') === cardVersion && parent?.exists && parent.get('deletedAt') == null;
+    const unchanged = card.exists && card.get('deletedAt') == null && (card.get('contentVersion') || card.get('version')) === cardVersion && parent?.exists && parent.get('deletedAt') == null;
     const undoId = data.undoEventId ? id(data.undoEventId) : null;
     const original = undoId ? await tx.get(root(uid).collection('reviews').doc(undoId)) : null;
     let applied = !!unchanged && (current.get('version') || 0) === expectedVersion;

@@ -3,6 +3,7 @@ import { auth, db, root } from './core';
 export async function cleanup() {
   const disabled = await db.collection('access').where('deletionRequested','==',true).get();
   for (const account of disabled.docs) {
+    if (account.get('deletionRequestedAt') > Date.now() - 600000) continue;
     await db.recursiveDelete(root(account.id));
     try { await auth.deleteUser(account.id); } catch (e: any) { if (e.code !== 'auth/user-not-found') throw e; }
     await account.ref.update({ deletionRequested: false, deletedAt: Date.now() });

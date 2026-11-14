@@ -3,7 +3,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { onCall, CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 initializeApp();
 export const db = getFirestore();
@@ -42,13 +42,14 @@ export async function requireOwner(request: CallableRequest): Promise<string> {
 export function callable(name: string, handler: (uid: string, data: Record<string, any>) => Promise<unknown>, secrets: string[] = []) {
   return onCall({ region, enforceAppCheck: true, maxInstances: 2, minInstances: 0, timeoutSeconds: 540, secrets }, async request => {
     const started = Date.now();
+    const operationId = randomUUID();
     try {
       const uid = await requireOwner(request);
       const result = await handler(uid, object(request.data));
-      logger.info('operation.succeeded', { operation: name, elapsedMs: Date.now() - started });
+      logger.info('operation.succeeded', { operationId, operation: name, elapsedMs: Date.now() - started });
       return result;
     } catch (error) {
-      logger.warn('operation.failed', { operation: name, code: error instanceof HttpsError ? error.code : 'internal', elapsedMs: Date.now() - started });
+      logger.warn('operation.failed', { operationId, operation: name, code: error instanceof HttpsError ? error.code : 'internal', elapsedMs: Date.now() - started });
       if (error instanceof HttpsError) throw error;
       throw new HttpsError('internal', 'The operation could not be completed. Retry safely.');
     }

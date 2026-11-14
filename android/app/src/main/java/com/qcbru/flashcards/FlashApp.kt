@@ -3,6 +3,10 @@ package com.qcbru.flashcards
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
@@ -20,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,6 +57,7 @@ import java.time.format.DateTimeFormatter
         if(reminder != null) { setupDecks=reminder.deckIds.joinToString(","); setupFilter=reminder.filter; model.clearReminder() }
     }
     val inSession=stack.lastOrNull() is SessionRoute
+    val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide=maxWidth>=840.dp
         Scaffold(containerColor=MaterialTheme.colorScheme.background,
@@ -59,7 +65,7 @@ import java.time.format.DateTimeFormatter
             topBar={ if(!inSession) TopAppBar(title={ Text("flashcards",color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.SemiBold) },
                 navigationIcon={ if(stack.size>1) IconButton(onClick={stack.removeLastOrNull()}) { Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back") } },
                 actions={ if(state.uid!=null) IconButton(onClick=model::refresh,enabled=state.online&&!state.busy) { Icon(Icons.Default.Refresh,"Refresh") } }) },
-            bottomBar={ if(state.uid!=null&&!inSession&&!wide) NavigationBar {
+            bottomBar={ if(state.uid!=null&&!inSession&&!wide&&!keyboardVisible) NavigationBar {
                 listOf("Decks","Review","Reminders","Settings").forEach { name -> NavigationBarItem(selected=tab==name,
                     onClick={tab=name;stack.clear();stack.add(HomeRoute)},icon={Icon(tabIcon(name),name)},label={Text(name)}) }
             } }) { padding ->
@@ -195,14 +201,14 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
         } else LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({newCard=true},enabled=state.online&&!state.busy){Text("Add card")};TextButton({onEdit(deck.id)},enabled=state.online&&!state.busy){Text("Deck settings")};TextButton({onImport(deck.id)},enabled=state.online&&!state.busy){Text("Import")}}}
             item{OutlinedTextField(search,{search=it},label={Text("Find a card")},modifier=Modifier.fillMaxWidth())}
-            item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){FilterChip(stars,{stars=!stars},label={Text("Starred")});FilterChip(trash,{trash=!trash},label={Text("Trash")});TextButton({onExport(ImportExport.delimited(cards,'\t'),"${deck.title}.tsv")}){Text("Export TSV")};TextButton({onExport(ImportExport.delimited(cards,','),"${deck.title}.csv")}){Text("CSV")}}}
+            item{Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)){FilterChip(stars,{stars=!stars},label={Text("Starred")});FilterChip(trash,{trash=!trash},label={Text("Trash")});TextButton({onExport(ImportExport.delimited(cards,'\t'),"${deck.title}.tsv")},enabled=deck.downloaded){Text("Export TSV")};TextButton({onExport(ImportExport.delimited(cards,','),"${deck.title}.csv")},enabled=deck.downloaded){Text("CSV")}}}
             val shown=cards.filter{(it.deletedAt!=null)==trash&&(!stars||it.starred)&&(it.term.contains(search,true)||it.definition.contains(search,true))&&!it.purgeRequested}
             if(shown.isEmpty())item{Empty("No cards here yet","Add cards manually, import a list, or ask AI in Chat.")}
             items(shown,key={it.id}){card->Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically){Text(card.term,style=MaterialTheme.typography.titleMedium,modifier=Modifier.weight(1f));IconButton({model.saveCard(card.copy(starred=!card.starred))},enabled=state.online&&!state.busy&&!trash){Icon(if(card.starred)Icons.Default.Star else Icons.Default.StarBorder,if(card.starred)"Unstar card"else"Star card")}}
                     Text(card.definition);if(card.example.isNotBlank())Text(card.example,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                         if(trash){TextButton({model.contentAction("cards",card.id,card.version,"restore")},enabled=state.online&&!state.busy){Text("Restore")};TextButton({deleteCardId=card.id}){Text("Delete permanently")}}
                         else {TextButton({cardId=card.id},enabled=state.online&&!state.busy){Text("Edit")};TextButton({model.saveCard(card.copy(id=newId(),version=0,order=(cards.maxOfOrNull{it.order}?:0)+1000))},enabled=state.online&&!state.busy){Text("Copy")};IconButton({model.moveCard(card,-1)},enabled=state.online&&!state.busy){Icon(Icons.Default.KeyboardArrowUp,"Move card up")};IconButton({model.moveCard(card,1)},enabled=state.online&&!state.busy){Icon(Icons.Default.KeyboardArrowDown,"Move card down")};IconButton({deleteCardId=card.id}){Icon(Icons.Default.DeleteOutline,"Move card to trash")}}
                     }
@@ -219,9 +225,7 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
     }}
 }
 @Composable private fun ChatScreen(deckId:String,state:FlashState,model:FlashViewModel) {
-    val existing=state.turns.filter{turn->state.proposals.any{it.deckId==deckId&&it.conversationId==turn.conversationId}}
-    // Persist one conversation key for this deck's open chat; previously saved chats are selectable.
-    val conversationIds=(existing.map{it.conversationId}+state.turns.filter{it.conversationId.startsWith("${deckId}_")}.map{it.conversationId}).distinct()
+    val conversationIds=state.conversations.filter{it.deckId==deckId}.sortedByDescending{it.updatedAt}.map{it.id}
     var conversation by rememberSaveable(deckId){mutableStateOf("${deckId}_${newId()}")}
     var draft by rememberSaveable(deckId,conversation){mutableStateOf("")};var details by rememberSaveable{mutableStateOf(false)}
     var deleting by rememberSaveable{mutableStateOf(false)}
@@ -289,9 +293,13 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
             LinearProgressIndicator(progress={completed.toFloat()/session.items.size.coerceAtLeast(1)},modifier=Modifier.fillMaxWidth())
             if(session.mode in listOf("practice","browse")) {
                 Text(if(session.mode=="practice")"Flip, then choose confidence. Swipe left: Low · right: High."else"Tap to flip. Swipe to browse.",style=MaterialTheme.typography.bodySmall)
-                Box(Modifier.weight(1f)){FlashCardFace(item,session.revealed,onFlip={if(!state.busy)model.reveal(session)},onSpeak=onSpeak,onSwipe={right->
+                val context=LocalContext.current
+                val animationMs=if(android.provider.Settings.Global.getFloat(context.contentResolver,android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,1f)==0f)0 else 200
+                AnimatedContent(targetState=item,modifier=Modifier.weight(1f),transitionSpec={
+                    slideInHorizontally(tween(animationMs)){it} togetherWith slideOutHorizontally(tween(animationMs)){-it}
+                },label="Next card"){shown->key(shown.key){FlashCardFace(shown,if(shown.key==item.key)session.revealed else false,onFlip={if(!state.busy)model.reveal(session)},onSpeak=onSpeak,onSwipe={right->
                     if(!state.busy){if(session.mode=="browse")model.advance(session,if(right)-1 else 1)else if(session.revealed)model.rate(session,if(right)"high"else"low")}
-                })}
+                })}}
                 if(session.mode=="practice") {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         listOf("low" to "↻ Low","medium" to "≈ Medium","high" to "✓ High").forEach{(value,label)->
@@ -384,7 +392,7 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
 @Composable private fun ImportDialog(deck:Deck,state:FlashState,model:FlashViewModel,onOpenFile:()->Unit,onDismiss:()->Unit) {
     var source by rememberSaveable{mutableStateOf("")};var delimiter by rememberSaveable{mutableStateOf("Tab")};var preview by rememberSaveable{mutableStateOf(false)}
     LaunchedEffect(state.importText){if(state.importText.isNotEmpty()){source=state.importText;model.imported("");preview=false}}
-    val parsed=remember(source,delimiter,preview){if(preview)runCatching{ImportExport.parse(source,deck.id,state.cards.filter{it.deckId==deck.id},if(delimiter=="Tab")'\t'else',')}else null}
+    val parsed=remember(source,delimiter,preview,state.cards){if(preview)runCatching{ImportExport.parse(source,deck.id,state.cards.filter{it.deckId==deck.id},if(delimiter=="Tab")'\t'else',')}else null}
     FormDialog("Import into ${deck.title}",onDismiss) {
         Text("Paste term/definition rows or select a UTF-8 CSV/TSV file. Duplicate rows are skipped.")
         TextButton(onOpenFile){Text("Open file")};Choice("Separator",listOf("Tab","Comma"),delimiter,{delimiter=it;preview=false})

@@ -10,4 +10,3 @@ allowBuilds:
   '@firebase/util': false
   protobufjs: false
 confirmModulesPurge: false
-

@@ -20,7 +20,8 @@ fun newId(): String = UUID.randomUUID().toString()
     val explanation: String = "", val example: String = "", val termAlternatives: List<String> = emptyList(),
     val definitionAlternatives: List<String> = emptyList(), val starred: Boolean = false, val order: Long = 0,
     val version: Int = 0, val deletedAt: Long? = null, val updatedAt: Long = 0, val purgeRequested: Boolean = false,
-)
+    val contentVersion: Int = 0,
+) { val learningVersion get() = if (contentVersion > 0) contentVersion else version }
 @Serializable data class Progress(
     val id: String, val cardId: String, val direction: String, val confidence: String,
     val cardVersion: Int, val version: Int, val eventId: String, val updatedAt: Long,
@@ -64,6 +65,7 @@ fun newId(): String = UUID.randomUUID().toString()
     val version: Int = 0, val updatedAt: Long = 0,
 )
 @Serializable data class Turn(val id: String = "", val conversationId: String = "", val user: String = "", val assistant: String = "", val proposalId: String? = null, val createdAt: Long = 0)
+@Serializable data class Conversation(val id: String, val deckId: String, val updatedAt: Long = 0, val deletedAt: Long? = null)
 @Serializable data class ProposalOperation(val kind: String, val targetId: String, val expectedVersion: Int,
     val before: JsonObject? = null, val after: JsonObject? = null)
 @Serializable data class Proposal(val id: String, val deckId: String, val conversationId: String,
@@ -74,7 +76,7 @@ fun newId(): String = UUID.randomUUID().toString()
 fun normalized(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFC).trim().replace(Regex("\\s+"), " ").lowercase(Locale.forLanguageTag("es"))
 fun exactAnswer(item: StudyItem, answer: String): Boolean = (listOf(item.answer) + item.alternatives).any { normalized(it) == normalized(answer) }
 fun eligible(card: FlashCard, direction: String, filter: String, progress: List<Progress>): Boolean {
-    val p = progress.find { it.cardId == card.id && it.direction == direction && it.cardVersion == card.version }
+    val p = progress.find { it.cardId == card.id && it.direction == direction && it.cardVersion == card.learningVersion }
     return card.deletedAt == null && !card.purgeRequested && when (filter) {
         "starred" -> card.starred
         "struggling" -> p?.confidence in listOf("low", "medium")

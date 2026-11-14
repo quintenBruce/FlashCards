@@ -15,7 +15,7 @@ data class FlashState(
     val uid: String? = null, val email: String = "", val loading: Boolean = false, val busy: Boolean = false,
     val online: Boolean = true, val notice: String = "", val decks: List<Deck> = emptyList(), val cards: List<FlashCard> = emptyList(),
     val progress: List<Progress> = emptyList(), val sessions: List<StudySession> = emptyList(),
-    val reminders: List<StudyReminder> = emptyList(), val turns: List<Turn> = emptyList(), val proposals: List<Proposal> = emptyList(),
+    val reminders: List<StudyReminder> = emptyList(), val turns: List<Turn> = emptyList(), val proposals: List<Proposal> = emptyList(), val conversations: List<Conversation> = emptyList(),
     val usage: Usage = Usage(), val theme: String = "system", val rate: Float = .85f, val voice: String? = null,
     val importText: String = "", val exportText: String = "", val pendingReminder: String? = null,
 )
@@ -43,7 +43,7 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
     private fun observe(uid: String) {
         localJob?.cancel()
         mutable.update { it.copy(uid = uid,email = repository.auth.currentUser?.email ?: "",loading = true) }
-        localJob = viewModelScope.launch {
+        localJob = viewModelScope.launch(Dispatchers.Default) {
             repository.observeLocal(uid).collect { rows ->
                 fun <T> read(kind: String, decode: (String) -> T): List<T> = rows.filter { it.kind == kind }.mapNotNull { row ->
                     runCatching { decode(row.body) }.onFailure { notice("A saved $kind record could not be read. Export a backup before clearing storage.") }.getOrNull()
@@ -55,6 +55,7 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
                     sessions = read("sessions") { Codec.decodeFromString<StudySession>(it) }.sortedByDescending { it.updatedAt },
                     reminders = read("reminders") { Codec.decodeFromString<StudyReminder>(it) }, turns = read("turns") { Codec.decodeFromString<Turn>(it) },
                     proposals = read("proposals") { Codec.decodeFromString<Proposal>(it) },
+                    conversations = read("conversations") { Codec.decodeFromString<Conversation>(it) }.filter { it.deletedAt == null },
                     usage = read("usage") { Codec.decodeFromString<Usage>(it) }.maxByOrNull { it.month } ?: Usage()) }
             }
         }
@@ -110,7 +111,10 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
     fun reveal(session: StudySession) = action { repository.persistSession(session.copy(revealed = !session.revealed,revision = session.revision+1)) }
     fun rate(session: StudySession, confidence: String) = action { repository.rate(session,confidence) }
     fun undo(session: StudySession) = action { repository.undo(session) }
-    fun answer(session: StudySession, answer: String) = action { repository.answer(session,answer) }
+    fun answer(session: StudySession, answer: String) = action {
+        require(answer.length<=4000) { "Please keep this answer under 4,000 characters" }
+        repository.answer(session,answer)
+    }
     fun advance(session: StudySession, delta: Int = 1) = action {
         val next = session.cursor+delta
         repository.persistSession(session.copy(cursor = next.coerceIn(0,session.items.lastIndex),revealed = false,

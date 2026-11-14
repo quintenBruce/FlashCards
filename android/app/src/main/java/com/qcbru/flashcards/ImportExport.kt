@@ -49,6 +49,23 @@ object ImportExport {
         val backup = Codec.decodeFromString<Backup>(source.removePrefix("\uFEFF"))
         require(backup.format == "flashcards" && backup.schemaVersion == 1) { "Unsupported backup format" }
         require(backup.collections.keys.all { it in listOf("decks","cards","progress","reviews","sessions","reminders","conversations","turns") }) { "Unexpected backup collection" }
+        for ((kind,rows) in backup.collections) for (row in rows) {
+            val recordId = row["id"]?.jsonPrimitive?.content ?: error("A $kind record is missing its ID")
+            require(recordId.matches(Regex("[a-zA-Z0-9_-]{1,100}"))) { "Invalid backup ID" }
+            when (kind) {
+                "decks" -> Codec.decodeFromJsonElement<Deck>(row).also { require(it.title.isNotBlank()) { "Deck title is required" } }
+                "cards" -> Codec.decodeFromJsonElement<FlashCard>(row).also { require(it.deckId.isNotBlank()&&it.term.isNotBlank()&&it.definition.isNotBlank()) { "Invalid backup card" } }
+                "progress" -> Codec.decodeFromJsonElement<Progress>(row)
+                "reviews" -> Codec.decodeFromJsonElement<ReviewEvent>(row)
+                "sessions" -> Codec.decodeFromJsonElement<StudySession>(row["value"] ?: error("Missing session snapshot")).also { require(it.id==recordId) { "Session ID mismatch" } }
+                "reminders" -> Codec.decodeFromJsonElement<StudyReminder>(row).also {
+                    java.time.ZoneId.of(it.schedule.timeZone)
+                    require(it.schedule.kind in listOf("once","daily","weekdays")&&it.schedule.hour in 0..23&&it.schedule.minute in 0..59) { "Invalid backup schedule" }
+                }
+                "conversations" -> Codec.decodeFromJsonElement<Conversation>(row)
+                "turns" -> Codec.decodeFromJsonElement<Turn>(row)
+            }
+        }
         return backup
     }
     fun remap(backup: Backup): Backup {

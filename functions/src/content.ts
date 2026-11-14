@@ -11,7 +11,7 @@ export function deckData(raw: unknown): Omit<Deck, 'id' | 'version' | 'updatedAt
   return { title: text(d.title, 200), description: text(d.description ?? '', 2000, true), termLanguage, definitionLanguage,
     spanishVariety: text(d.spanishVariety ?? 'es-419', 35), archived: d.archived === true };
 }
-export function cardData(raw: unknown): Omit<Card, 'id' | 'version' | 'updatedAt' | 'deletedAt'> {
+export function cardData(raw: unknown): Omit<Card, 'id' | 'version' | 'contentVersion' | 'updatedAt' | 'deletedAt'> {
   const c = object(raw);
   return { deckId: id(c.deckId), term: text(c.term, 2000), definition: text(c.definition, 4000),
     explanation: text(c.explanation ?? '', 4000, true), example: text(c.example ?? '', 2000, true),
@@ -45,7 +45,13 @@ export async function mutate(uid: string, data: Record<string, any>) {
       if (current.get('deletedAt') == null) throw new HttpsError('failed-precondition', 'Move to trash before permanent deletion');
       // Tombstone is hidden immediately; scheduled cleanup safely removes children.
       tx.update(ref, { purgeRequested: true, updatedAt: now, version: nextVersion });
-    } else if (action === 'save') tx.set(ref, { ...clean, id: recordId, version: nextVersion, deletedAt: null, updatedAt: now });
+    } else if (action === 'save') {
+      const contentFields = ['term','definition','explanation','example','termAlternatives','definitionAlternatives'];
+      const meaningChanged = entity === 'cards' && contentFields.some(field => JSON.stringify((clean as any)[field]) !== JSON.stringify(current.get(field)));
+      const contentVersion = entity === 'cards' ? (current.get('contentVersion') || current.get('version') || 0) + (meaningChanged ? 1 : 0) : undefined;
+      tx.set(ref, { ...clean, id: recordId, version: nextVersion, deletedAt: null, updatedAt: now,
+        ...(entity === 'cards' ? { contentVersion: contentVersion || 1 } : {}) });
+    }
     else tx.update(ref, { deletedAt: action === 'trash' ? now : null, version: nextVersion, updatedAt: now });
     if (parentRef && parent) tx.update(parentRef, { version: parent.get('version') + 1, updatedAt: now });
     tx.create(receipt, { fingerprint, result, createdAt: now });
@@ -63,7 +69,7 @@ export async function importCards(uid: string, data: Record<string, any>) {
     sameRequest(prior, fingerprint); if (prior.exists) return prior.get('result');
     version(deck, data.expectedVersion);
     if (deck.get('deletedAt') != null || existing.some(c => c.exists)) throw new HttpsError('failed-precondition', 'Import targets changed');
-    for (const card of cards) tx.create(root(uid).collection('cards').doc(card.id), { ...card, version: 1, deletedAt: null, updatedAt: Date.now() });
+    for (const card of cards) tx.create(root(uid).collection('cards').doc(card.id), { ...card, version: 1, contentVersion: 1, deletedAt: null, updatedAt: Date.now() });
     tx.update(parent, { version: deck.get('version') + 1, updatedAt: Date.now() });
     const result = { imported: cards.length, version: deck.get('version') + 1 };
     tx.create(receipt, { fingerprint, result, createdAt: Date.now() }); return result;

@@ -40,7 +40,8 @@ export async function reminderAction(uid: string, data: Record<string, any>) {
       const scheduledAt = integer(data.scheduledAt);
       const occurrence = await tx.get(root(uid).collection('occurrences').doc(`${reminderId}_${scheduledAt}`));
       if (!occurrence.exists && scheduledAt > Date.now()) throw new HttpsError('failed-precondition', 'Reminder has not fired');
-      tx.set(root(uid).collection('snoozes').doc(requestId), { reminderId, at: Date.now() + 15 * 60000, scheduledAt, sent: false });
+      const snoozeAt = data.snoozeAt == null ? Date.now() + 15 * 60000 : integer(data.snoozeAt, Date.now() - 86400000, Date.now() + 16 * 60000);
+      tx.set(root(uid).collection('snoozes').doc(requestId), { reminderId, at: snoozeAt, scheduledAt, sent: false });
     } else throw new HttpsError('invalid-argument', 'Unknown reminder action');
     const result = { action, id: reminderId }; tx.create(receipt, { fingerprint, result, createdAt: Date.now() }); return result;
   });
@@ -52,14 +53,15 @@ export async function registerDevice(uid: string, data: Record<string, any>) {
   return { registered: true };
 }
 async function send(uid: string, reminder: Record<string, any>, occurrenceId: string, scheduledAt: number) {
-  if ((await db.collection('access').doc(uid).get()).get('enabled') !== true) return;
+  if ((await db.collection('access').doc(uid).get()).get('enabled') !== true) return { accepted: 0, reason: 'disabled' };
   const devices = await root(uid).collection('devices').get();
-  if (!devices.size) return;
+  if (!devices.size) return { accepted: 0, reason: 'no_devices' };
   const rows = devices.docs.filter(d => typeof d.get('token') === 'string');
   const result = await getMessaging().sendEachForMulticast({ tokens: rows.map(d => d.get('token')), data: {
     reminderId: reminder.id, occurrenceId, scheduledAt: String(scheduledAt), title: reminder.title, uid,
   }, android: { priority: 'high', ttl: 3600000 } });
   await Promise.all(result.responses.map((r, i) => !r.success && ['messaging/registration-token-not-registered','messaging/invalid-registration-token'].includes(r.error?.code || '') ? rows[i].ref.delete() : Promise.resolve()));
+  return { accepted: result.successCount, rejected: result.failureCount, reason: result.successCount ? 'accepted' : 'all_rejected' };
 }
 export async function dispatchDue() {
   const now = Date.now();
@@ -78,10 +80,10 @@ export async function dispatchDue() {
     });
     if (!claim) continue;
     try {
-      await send(uid, claim.reminder, claim.occurrenceId, claim.scheduledAt);
+      const delivery = await send(uid, claim.reminder, claim.occurrenceId, claim.scheduledAt);
       await db.runTransaction(async tx => {
         const current = await tx.get(doc.ref);
-        tx.set(claim.ref, { status: 'sent', sentAt: Date.now(), leaseUntil: 0 }, { merge: true });
+        tx.set(claim.ref, { status: 'sent', sentAt: Date.now(), leaseUntil: 0, ...delivery }, { merge: true });
         if (current.exists && current.get('nextAt') === claim.scheduledAt) {
           const nextAt = nextOccurrence(current.get('schedule'), now);
           tx.update(doc.ref, { nextAt, enabled: nextAt != null, updatedAt: Date.now() });
@@ -94,9 +96,17 @@ export async function dispatchDue() {
   for (const account of accounts.docs) {
     const snoozes = await root(account.id).collection('snoozes').where('sent','==',false).get();
     for (const s of snoozes.docs.filter(s => s.get('at') <= now)) {
-      const r = await root(account.id).collection('reminders').doc(s.get('reminderId')).get();
-      if (r.exists) await send(account.id, r.data()!, `snooze_${s.id}`, s.get('scheduledAt'));
-      await s.ref.update({ sent: true });
+      const claimed = await db.runTransaction(async tx => {
+        const current = await tx.get(s.ref);
+        if (current.get('sent') || current.get('leaseUntil') > now) return false;
+        tx.update(s.ref, { leaseUntil: now + 120000 }); return true;
+      });
+      if (!claimed) continue;
+      try {
+        const r = await root(account.id).collection('reminders').doc(s.get('reminderId')).get();
+        if (r.exists) await send(account.id, r.data()!, `snooze_${s.id}`, s.get('scheduledAt'));
+        await s.ref.update({ sent: true, leaseUntil: 0 });
+      } catch { await s.ref.update({ leaseUntil: 0 }); }
     }
   }
 }

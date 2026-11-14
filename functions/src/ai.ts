@@ -80,7 +80,7 @@ export async function chat(uid: string, data: Record<string, any>) {
     if (expectedVersion && o.expectedVersion !== expectedVersion) throw new HttpsError('failed-precondition', 'AI referenced an outdated version');
     if (seen.has(targetId)) throw new HttpsError('internal', 'Conflicting proposal operations');
     seen.add(targetId);
-    const after = kind.startsWith('delete') ? null : isDeck ? deckData(o.deck) : cardData({ ...object(o.card), deckId });
+    const after = kind.startsWith('delete') ? null : isDeck ? deckData(o.deck) : { ...cardData({ ...object(o.card), deckId }), contentVersion: (before?.contentVersion || before?.version || 0) + 1 };
     operations.push({ kind, targetId, expectedVersion, before, after });
   }
   if (!deck.exists && operations.length && !operations.some(o => o.kind === 'create_deck')) throw new HttpsError('failed-precondition', 'New cards require a deck proposal');
@@ -90,7 +90,9 @@ export async function chat(uid: string, data: Record<string, any>) {
   const result = { reply: text(decision.reply, 12000), proposalId, conversationId, deckId };
   await db.runTransaction(async tx => {
     const currentAccess = await tx.get(db.collection('access').doc(uid));
+    const currentConversation = await tx.get(conversation);
     if (currentAccess.get('enabled') !== true) throw new HttpsError('permission-denied', 'Account disabled');
+    if (currentConversation.get('deletedAt')) throw new HttpsError('failed-precondition', 'Conversation was deleted');
     tx.set(conversation, { id: conversationId, deckId, updatedAt: Date.now() }, { merge: true });
     if (proposalId) {
       tx.create(root(uid).collection('proposals').doc(proposalId), { id: proposalId, deckId, conversationId, operations,
