@@ -12,7 +12,6 @@
 **/*.jks
 **/*.keystore
 **/service-account*.json
-.firebaserc
 .idea/
 *.log
 verification-results/

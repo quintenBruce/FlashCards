@@ -6,9 +6,11 @@ connect the app. Never select the Reminder Firebase project for this app.
 
 ## 1. Firebase
 
-1. Create a separate Firebase project named FlashCards, enable Blaze billing,
-   and create Firestore Standard in `us-south1`. This is an irreversible region
-   choice; keep Functions in the same region.
+1. Use the existing Firebase project `flashcards-6b1ac`. The committed
+   `.firebaserc` selects it. Inspect its existing Firestore instance before any
+   provisioning; preserve its edition/location. The accepted app plan targets
+   Standard edition and Functions in `us-south1`. Verify billing before deploying
+   paid Cloud Functions. Do not create a replacement project.
 2. Enable Authentication → Google. Use your verified Google account.
 3. Register Android package `com.qcbru.flashcards`. Add your debug and release
    signing SHA-1/SHA-256 certificates. The user can obtain these with Android
@@ -19,7 +21,7 @@ connect the app. Never select the Reminder Firebase project for this app.
    the token shown on the device. Release builds use Play Integrity. For a
    sideloaded release, configure Play Integrity for the actual distribution
    channel/certificate or use an explicitly authorized debug pilot build.
-6. Copy `.firebaserc.example` to `.firebaserc` and set the new project ID. Copy
+6. Confirm `.firebaserc` selects `flashcards-6b1ac`. Copy
    `functions/.env.example` to `functions/.env` and set `OWNER_EMAIL` to your
    Google account. Empty/unconfigured OWNER_EMAIL denies bootstrap.
 7. Put the OpenAI key in Secret Manager using the command below. Keep the
@@ -33,8 +35,8 @@ Commands for the user (not executed here):
 ```powershell
 pnpm install --frozen-lockfile
 pnpm run build:functions
-firebase functions:secrets:set OPENAI_API_KEY
-firebase deploy --only firestore,functions --project YOUR_FLASHCARDS_PROJECT_ID
+npx -y firebase-tools@latest functions:secrets:set OPENAI_API_KEY --project flashcards-6b1ac
+npx -y firebase-tools@latest deploy --only "firestore,functions" --project flashcards-6b1ac
 ```
 
 The deploy tool also uses `functions/package-lock.json` for buildpack installs.
@@ -76,6 +78,11 @@ build-only checks. Replace it with the real config before phone acceptance.
 
 All source changes are committed locally. No remote repository was supplied or
 created, and no code was pushed. Choose a private Git remote when ready.
+
+Official Firebase agent skills are installed in the user's Codex skills directory.
+See `FIREBASE_CONNECTION.md` for the current local connection status. Firebase
+administrative credentials are governed by Google Cloud IAM; choosing a default
+project does not restrict an authenticated account to that project.
 CI is manual (`workflow_dispatch`) to respect the no-execution instruction;
 it does not deploy. After an authorized first build, review and commit Room's
 generated schema JSON before any database migration. Keep signing material and
