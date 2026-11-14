@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) {
+      return request.auth != null
+        && request.auth.uid == uid
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && exists(/databases/$(database)/documents/access/$(uid))
+        && get(/databases/$(database)/documents/access/$(uid)).data.enabled == true;
+    }
+    match /users/{uid}/{document=**} {
+      allow read: if owner(uid);
+      allow write: if false;
+    }
+    match /access/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+  }
+}
