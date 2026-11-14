@@ -1,0 +1,335 @@
+package com.qcbru.flashcards
+
+import android.app.NotificationManager
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import androidx.work.*
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.*
+import com.google.firebase.functions.FirebaseFunctions
+import com.google.firebase.messaging.FirebaseMessaging
+import com.qcbru.flashcards.alerts.StudyAlerts
+import com.qcbru.flashcards.storage.FlashDatabase
+import com.qcbru.flashcards.storage.StoredDocument
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.tasks.await
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.*
+import java.util.concurrent.TimeUnit
+
+class FlashRepository(private val context: Context, val database: FlashDatabase) {
+    val auth = FirebaseAuth.getInstance()
+    private val cloud = FirebaseFirestore.getInstance()
+    private val functions = FirebaseFunctions.getInstance("us-south1")
+    val preferences = context.getSharedPreferences("flashcards", Context.MODE_PRIVATE)
+    private val listeners = mutableListOf<ListenerRegistration>()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val dao get() = database.documents()
+    val uid get() = auth.currentUser?.uid
+    fun online(): Boolean {
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        return manager.getNetworkCapabilities(manager.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+    }
+    suspend fun call(name: String, value: Map<String, Any?> = emptyMap()): JsonObject {
+        check(online()) { "Offline. Downloaded study and saved progress remain available." }
+        return functions.getHttpsCallable(name).withTimeout(540, TimeUnit.SECONDS).call(value).await().data.toJson().jsonObject
+    }
+    suspend fun initialize() {
+        call("bootstrap")
+        val user = uid ?: return
+        val previous = preferences.getString("active_uid", null)
+        if (previous != null && previous != user) clearLocal(previous)
+        preferences.edit().putString("active_uid", user).apply()
+        observeCloud(user)
+        registerDevice()
+        SyncWorker.enqueue(context)
+    }
+    fun observeLocal(user: String): Flow<List<StoredDocument>> = dao.observe(user)
+    private fun observeCloud(user: String) {
+        stopListeners()
+        for (kind in listOf("decks","progress","reminders","turns","proposals","usage")) {
+            listeners += cloud.collection("users").document(user).collection(kind).addSnapshotListener { snapshot, error ->
+                if (error != null) { preferences.edit().putString("sync_error", "Cloud sync needs attention. Refresh or sign in again.").apply(); return@addSnapshotListener }
+                if (snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
+                scope.launch {
+                    if (uid != user) return@launch
+                    if (kind == "progress" && dao.list(user,"review_pending").isNotEmpty()) return@launch
+                    database.runInTransaction {
+                        if (uid == user) {
+                            dao.clearKind(user, kind)
+                            dao.putAll(snapshot.documents.map { StoredDocument(user, kind, it.id, (it.data.orEmpty() + ("id" to it.id)).toJson().toString()) })
+                        }
+                    }
+                    if (kind == "reminders") StudyAlerts.reschedule(context, user)
+                    if (kind == "decks") SyncWorker.enqueue(context)
+                }
+            }
+        }
+    }
+    fun stopListeners() { listeners.forEach { it.remove() }; listeners.clear() }
+    suspend fun refresh() {
+        val user = uid ?: return
+        check(online()) { "You are offline" }
+        observeCloud(user)
+        for (row in withContext(Dispatchers.IO) { dao.list(user,"downloads") }) download(row.id)
+        flush()
+    }
+    suspend fun download(deckId: String) = withContext(Dispatchers.IO) {
+        val user = uid ?: return@withContext
+        val deck = cloud.collection("users").document(user).collection("decks").document(deckId).get(Source.SERVER).await()
+        check(deck.exists() && deck.get("deletedAt") == null) { "Deck is unavailable" }
+        val rows = mutableListOf<StoredDocument>(); var cursor: DocumentSnapshot? = null
+        do {
+            var query = cloud.collection("users").document(user).collection("cards").whereEqualTo("deckId",deckId).orderBy("order").limit(200)
+            if (cursor != null) query = query.startAfter(cursor!!)
+            val page = query.get(Source.SERVER).await()
+            rows += page.documents.map { StoredDocument(user,"cards",it.id,(it.data.orEmpty() + ("id" to it.id)).toJson().toString()) }
+            cursor = if (page.size() == 200) page.documents.last() else null
+        } while (cursor != null)
+        if (uid != user) return@withContext
+        database.runInTransaction {
+            dao.list(user,"cards").filter { Codec.decodeFromString<FlashCard>(it.body).deckId == deckId }.forEach { dao.remove(user,"cards",it.id) }
+            dao.putAll(rows)
+            dao.put(StoredDocument(user,"decks",deckId,(deck.data.orEmpty() + ("id" to deckId)).toJson().toString()))
+            dao.put(StoredDocument(user,"downloads",deckId,"{}"))
+        }
+    }
+    suspend fun removeDownload(deckId: String) = withContext(Dispatchers.IO) {
+        val user = uid ?: return@withContext
+        database.runInTransaction {
+            dao.list(user,"cards").filter { Codec.decodeFromString<FlashCard>(it.body).deckId == deckId }.forEach { dao.remove(user,"cards",it.id) }
+            dao.remove(user,"downloads",deckId)
+        }
+    }
+    suspend fun saveDeck(deck: Deck) {
+        call("mutateContent", mapOf("requestId" to newId(), "entity" to "decks", "action" to "save", "id" to deck.id,
+            "expectedVersion" to deck.version, "value" to Codec.encodeToJsonElement(deck).toCloud()))
+        download(deck.id)
+    }
+    suspend fun saveCard(card: FlashCard) {
+        call("mutateContent", mapOf("requestId" to newId(), "entity" to "cards", "action" to "save", "id" to card.id,
+            "expectedVersion" to card.version, "value" to Codec.encodeToJsonElement(card).toCloud()))
+        download(card.deckId)
+    }
+    suspend fun contentAction(entity: String, recordId: String, version: Int, action: String) {
+        call("mutateContent", mapOf("requestId" to newId(), "entity" to entity, "id" to recordId, "expectedVersion" to version, "action" to action))
+        if (entity == "cards") {
+            val user = uid ?: return
+            val card = withContext(Dispatchers.IO) { dao.get(user,"cards",recordId)?.let { Codec.decodeFromString<FlashCard>(it.body) } }
+            if (card != null) download(card.deckId)
+        }
+    }
+    suspend fun importCards(deck: Deck, cards: List<FlashCard>) {
+        var currentVersion = deck.version
+        for (batch in cards.chunked(100)) {
+            val result = call("importContent", mapOf("requestId" to newId(),"deckId" to deck.id,"expectedVersion" to currentVersion,
+                "cards" to batch.map { Codec.encodeToJsonElement(it).toCloud() }))
+            currentVersion = result["version"]!!.jsonPrimitive.int
+        }
+        download(deck.id)
+    }
+    suspend fun persistSession(session: StudySession) = withContext(Dispatchers.IO) {
+        val user = uid ?: return@withContext
+        database.runInTransaction { writeSession(user, session) }
+        SyncWorker.enqueue(context)
+    }
+    private fun writeSession(user: String, session: StudySession) {
+        dao.put(StoredDocument(user,"sessions",session.id,Codec.encodeToString(session)))
+        dao.put(StoredDocument(user,"session_pending",session.id,"{}"))
+    }
+    suspend fun rate(session: StudySession, confidence: String): StudySession = withContext(Dispatchers.IO) {
+        val user = uid ?: error("Sign in first"); val item = session.current ?: error("Session complete")
+        val progressId = "${item.card.id}_${item.direction}"
+        val old = dao.get(user,"progress",progressId)?.let { Codec.decodeFromString<Progress>(it.body) }
+        val event = ReviewEvent(sessionId = session.id, cardId = item.card.id, cardVersion = item.card.version,
+            direction = item.direction, confidence = confidence, expectedVersion = old?.version ?: 0)
+        val next = StudyEngine.rated(session,confidence).copy(undoJson = Codec.encodeToString(session.copy(undoJson = null, undoEventId = null, undoProgress = null)), undoEventId = event.id, undoProgress = old)
+        database.runInTransaction {
+            writeSession(user,next)
+            dao.put(StoredDocument(user,"review_pending",event.id,Codec.encodeToString(event)))
+            dao.put(StoredDocument(user,"progress",progressId,Codec.encodeToString(Progress(progressId,item.card.id,item.direction,confidence,item.card.version,(old?.version ?: 0)+1,event.id,System.currentTimeMillis()))))
+        }
+        SyncWorker.enqueue(context); next
+    }
+    suspend fun undo(session: StudySession): StudySession = withContext(Dispatchers.IO) {
+        val user = uid ?: error("Sign in first"); val restored = Codec.decodeFromString<StudySession>(session.undoJson ?: error("Nothing to undo"))
+        val item = restored.current!!; val progressId = "${item.card.id}_${item.direction}"
+        val eventId = session.undoEventId!!
+        val pending = dao.get(user,"review_pending",eventId)
+        val current = dao.get(user,"progress",progressId)?.let { Codec.decodeFromString<Progress>(it.body) }
+        val next = restored.copy(revision = session.revision+1, serverVersion = session.serverVersion, updatedAt = System.currentTimeMillis())
+        database.runInTransaction {
+            if (pending != null) dao.remove(user,"review_pending",eventId)
+            else {
+                val event = ReviewEvent(sessionId = session.id, cardId = item.card.id, cardVersion = item.card.version, direction = item.direction,
+                    confidence = session.undoProgress?.confidence ?: "low", expectedVersion = current?.version ?: 0, undoEventId = eventId)
+                dao.put(StoredDocument(user,"review_pending",event.id,Codec.encodeToString(event)))
+            }
+            if (session.undoProgress == null) dao.remove(user,"progress",progressId)
+            else dao.put(StoredDocument(user,"progress",progressId,Codec.encodeToString(session.undoProgress)))
+            writeSession(user,next)
+        }
+        SyncWorker.enqueue(context); next
+    }
+    suspend fun answer(session: StudySession, answer: String): StudySession = withContext(Dispatchers.IO) {
+        val user = uid ?: error("Sign in first"); val item = session.current ?: error("No question")
+        val grade = when {
+            answer.isBlank() -> Grade(answer,"incorrect","No answer was provided.")
+            item.choices.isNotEmpty() -> Grade(answer, if (exactAnswer(item,answer)) "correct" else "incorrect", "Expected: ${item.answer}")
+            exactAnswer(item,answer) -> Grade(answer,"correct","Matches an accepted answer.")
+            else -> Grade(answer)
+        }
+        val next = session.copy(grades = session.grades + (item.key to grade), revealed = session.mode != "test", revision = session.revision+1)
+        database.runInTransaction {
+            writeSession(user,next)
+            if (grade.verdict == "pending") {
+                val request = GradeRequest(sessionId = session.id, itemKey = item.key, item = item, answer = answer)
+                dao.put(StoredDocument(user,"grade_pending",request.id,Codec.encodeToString(request)))
+            }
+        }
+        SyncWorker.enqueue(context); next
+    }
+    suspend fun sendMessage(deckId: String, conversationId: String, message: String) = call("sendDeckMessage",
+        mapOf("requestId" to newId(),"deckId" to deckId,"conversationId" to conversationId,"message" to message))
+    suspend fun confirm(proposal: Proposal, approve: Boolean) {
+        call("confirmProposal",mapOf("proposalId" to proposal.id,"approve" to approve))
+        if (approve) runCatching { download(proposal.deckId) }
+    }
+    suspend fun saveReminder(reminder: StudyReminder) {
+        call("upsertReminder",mapOf("requestId" to newId(),"id" to reminder.id,"expectedVersion" to reminder.version,"value" to Codec.encodeToJsonElement(reminder).toCloud()))
+    }
+    suspend fun deleteReminder(reminder: StudyReminder) {
+        call("applyReminderAction", mapOf("requestId" to newId(),"id" to reminder.id,"expectedVersion" to reminder.version,"action" to "delete"))
+    }
+    suspend fun deleteConversation(conversationId: String) { call("deleteConversation",mapOf("id" to conversationId)) }
+    suspend fun registerDevice() {
+        if (uid == null || !online()) return
+        val device = preferences.getString("device_id",null) ?: newId().also { preferences.edit().putString("device_id",it).apply() }
+        call("updateDevice",mapOf("deviceId" to device,"token" to FirebaseMessaging.getInstance().token.await()))
+    }
+    suspend fun exportBackup(): String {
+        val collections = linkedMapOf<String,List<JsonObject>>()
+        for (kind in listOf("decks","cards","progress","reviews","sessions","reminders","conversations","turns")) {
+            val rows = mutableListOf<JsonObject>(); var cursor: String? = null
+            do {
+                val page = call("exportBackupPage",mapOf("collection" to kind,"cursor" to cursor))
+                rows += page["rows"]!!.jsonArray.map { it.jsonObject }
+                cursor = page["cursor"]?.jsonPrimitive?.contentOrNull
+            } while (cursor != null)
+            collections[kind] = rows
+        }
+        return Codec.encodeToString(Backup(collections = collections))
+    }
+    suspend fun restoreBackup(backup: Backup) {
+        val remapped = ImportExport.remap(backup)
+        for (kind in listOf("decks","cards","progress","reviews","sessions","reminders","conversations","turns")) {
+            for (batch in remapped.collections[kind].orEmpty().chunked(100)) call("restoreBackupPage",mapOf("requestId" to newId(),"collection" to kind,"rows" to JsonArray(batch).toCloud()))
+        }
+        val user = uid ?: return
+        // Restore saved session snapshots locally as well as in cloud.
+        withContext(Dispatchers.IO) {
+            remapped.collections["sessions"].orEmpty().forEach { row ->
+                val value = row["value"] ?: return@forEach
+                val session = Codec.decodeFromJsonElement<StudySession>(value).copy(serverVersion = row["version"]?.jsonPrimitive?.int ?: 1, undoJson = null, undoEventId = null, undoProgress = null)
+                dao.put(StoredDocument(user,"sessions",session.id,Codec.encodeToString(session)))
+            }
+        }
+        refresh()
+    }
+    suspend fun clearLocal(user: String) = withContext(Dispatchers.IO) {
+        WorkManager.getInstance(context).cancelAllWorkByTag("sync-$user")
+        StudyAlerts.cancelAll(context,user)
+        context.getSystemService(NotificationManager::class.java).cancelAll()
+        dao.clear(user)
+    }
+    suspend fun signOut(delete: Boolean = false) {
+        val user = uid ?: return
+        if (delete) call("deleteAccount",mapOf("confirm" to "DELETE"))
+        else runCatching { call("updateDevice",mapOf("deviceId" to preferences.getString("device_id","") ,"remove" to true)) }
+        stopListeners(); auth.signOut(); clearLocal(user)
+        preferences.edit().remove("active_uid").apply()
+        runCatching { FirebaseMessaging.getInstance().deleteToken().await() }
+    }
+    suspend fun flush() = withContext(Dispatchers.IO) {
+        val user = uid ?: return@withContext
+        for (row in dao.list(user,"review_pending").sortedBy { Codec.decodeFromString<ReviewEvent>(it.body).occurredAt }) {
+            if (uid != user) return@withContext
+            val event = Codec.decodeFromString<ReviewEvent>(row.body)
+            val result = call("syncReviewEvent",Codec.encodeToJsonElement(event).toCloud() as Map<String,Any?>)
+            database.runInTransaction {
+                dao.remove(user,"review_pending",row.id)
+                val p = result["progress"]
+                val progressId = "${event.cardId}_${event.direction}"
+                // Keep optimistic state while later events for the same card remain queued.
+                if (dao.list(user,"review_pending").none { val r = Codec.decodeFromString<ReviewEvent>(it.body); r.cardId == event.cardId && r.direction == event.direction }) {
+                    if (p == null || p is JsonNull) dao.remove(user,"progress",progressId)
+                    else dao.put(StoredDocument(user,"progress",progressId,p.toString()))
+                }
+            }
+        }
+        for (row in dao.list(user,"grade_pending")) {
+            if (uid != user) return@withContext
+            val request = Codec.decodeFromString<GradeRequest>(row.body)
+            try {
+                val result = call("gradeAnswer",mapOf("requestId" to request.id,"card" to Codec.encodeToJsonElement(request.item.card).toCloud(),
+                    "direction" to request.item.direction,"answer" to request.answer,"variety" to request.item.variety))
+                database.runInTransaction {
+                    val saved = dao.get(user,"sessions",request.sessionId)
+                    if (saved != null) {
+                        val s = Codec.decodeFromString<StudySession>(saved.body)
+                        if (s.grades[request.itemKey]?.manual != true) writeSession(user,s.copy(grades = s.grades + (request.itemKey to
+                            Grade(request.answer,result["verdict"]!!.jsonPrimitive.content,result["explanation"]!!.jsonPrimitive.content)),revision = s.revision+1))
+                    }
+                    dao.remove(user,"grade_pending",row.id)
+                }
+            } catch (e: Exception) {
+                preferences.edit().putString("sync_error", "Some answers await AI grading. Check connection and budget.").apply()
+                // Keep pending work; a provider failure is never an incorrect answer.
+            }
+        }
+        for (row in dao.list(user,"session_pending")) {
+            if (uid != user) return@withContext
+            val saved = dao.get(user,"sessions",row.id) ?: continue
+            val session = Codec.decodeFromString<StudySession>(saved.body)
+            if (session.syncConflict) continue
+            try {
+                val result = call("saveStudySession",mapOf("requestId" to "${session.id}_${session.revision}","id" to session.id,
+                    "expectedVersion" to session.serverVersion,"session" to Codec.encodeToJsonElement(session).toCloud()))
+                database.runInTransaction {
+                    val latest = dao.get(user,"sessions",row.id)?.let { Codec.decodeFromString<StudySession>(it.body) } ?: return@runInTransaction
+                    dao.put(StoredDocument(user,"sessions",row.id,Codec.encodeToString(latest.copy(serverVersion = result["version"]!!.jsonPrimitive.int))))
+                    if (latest.revision == session.revision) dao.remove(user,"session_pending",row.id)
+                }
+            } catch (e: com.google.firebase.functions.FirebaseFunctionsException) {
+                if (e.code == com.google.firebase.functions.FirebaseFunctionsException.Code.FAILED_PRECONDITION) {
+                    dao.put(StoredDocument(user,"sessions",row.id,Codec.encodeToString(session.copy(syncConflict = true))))
+                } else throw e
+            }
+        }
+        for (row in dao.list(user,"reminder_pending")) {
+            if (uid != user) return@withContext
+            call("applyReminderAction", Codec.parseToJsonElement(row.body).toCloud() as Map<String,Any?>)
+            dao.remove(user,"reminder_pending",row.id)
+        }
+    }
+}
+
+class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context,parameters) {
+    override suspend fun doWork(): Result {
+        val repository = (applicationContext as FlashApplication).repository
+        if (repository.uid == null || inputData.getString("uid") != repository.uid) return Result.success()
+        return try { repository.flush(); StudyAlerts.reschedule(applicationContext,repository.uid!!); Result.success() }
+        catch (_: Exception) { Result.retry() }
+    }
+    companion object {
+        fun enqueue(context: Context) {
+            val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+            val work = OneTimeWorkRequestBuilder<SyncWorker>().setInputData(workDataOf("uid" to uid)).addTag("sync-$uid")
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL,30,TimeUnit.SECONDS).build()
+            WorkManager.getInstance(context).enqueueUniqueWork("sync-$uid",ExistingWorkPolicy.APPEND_OR_REPLACE,work)
+        }
+    }
+}

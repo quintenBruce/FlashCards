@@ -1,5 +1,4 @@
 packages:
-  - web
   - functions
 nodeLinker: hoisted
 packageImportMethod: copy
@@ -11,3 +10,4 @@ allowBuilds:
   '@firebase/util': false
   protobufjs: false
 confirmModulesPurge: false
+

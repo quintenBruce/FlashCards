@@ -2,6 +2,7 @@
   "indexes": [
     { "collectionGroup": "cards", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "deckId", "order": "ASCENDING" }, { "fieldPath": "order", "order": "ASCENDING" }] },
     { "collectionGroup": "turns", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "conversationId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "ASCENDING" }] },
+    { "collectionGroup": "turns", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "conversationId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
     { "collectionGroup": "reminders", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "enabled", "order": "ASCENDING" }, { "fieldPath": "nextAt", "order": "ASCENDING" }] }
   ],
   "fieldOverrides": []
