@@ -50,7 +50,7 @@ import java.time.format.DateTimeFormatter
     val stack = rememberNavBackStack(HomeRoute)
     var addSheet by rememberSaveable { mutableStateOf(false) }
     var draftPrompt by rememberSaveable { mutableStateOf(false) }
-    var menu by remember { mutableStateOf(false) }
+    var deleteDeckId by rememberSaveable { mutableStateOf<String?>(null) }
     var newDeck by rememberSaveable { mutableStateOf(false) }
     var editDeckId by rememberSaveable { mutableStateOf<String?>(null) }
     var setupDecks by rememberSaveable { mutableStateOf<String?>(null) }
@@ -68,6 +68,9 @@ import java.time.format.DateTimeFormatter
         }
     }
     val current=stack.lastOrNull()
+    var menu by remember(current) { mutableStateOf(false) }
+    var deckTrash by rememberSaveable((current as? DeckRoute)?.id) { mutableStateOf(false) }
+    val currentDeck=(current as? DeckRoute)?.let{route->state.decks.find{it.id==route.id}}
     val title=when(current) {
         is DeckRoute -> state.decks.find { it.id==current.id }?.title ?: "Deck"
         is ChatRoute -> if(current.creating) "Create with AI" else "Ask AI"
@@ -77,11 +80,21 @@ import java.time.format.DateTimeFormatter
     Scaffold(snackbarHost={SnackbarHost(snackbar)},
         topBar={if(current !is SessionRoute) TopAppBar(title={Text(title)},
             navigationIcon={if(stack.size>1) IconButton({stack.removeLastOrNull()}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back")}},
-            actions={if(state.uid!=null && current is HomeRoute) Box {
-                IconButton({menu=true}){Icon(Icons.Default.MoreVert,"More options")}
+            actions={if(state.uid!=null && (current is HomeRoute || currentDeck!=null)) Box {
+                IconButton({menu=true}){Icon(Icons.Default.MoreVert,if(current is DeckRoute)"Deck options"else"More options")}
                 DropdownMenu(menu,{menu=false}) {
-                    listOf("Study history","Reminders","Archived decks","Settings").forEach { name ->
-                        DropdownMenuItem(text={Text(name)},onClick={menu=false;stack.add(SecondaryRoute(name))})
+                    if(current is HomeRoute) {
+                        listOf("Study history","Reminders","Archived decks","Settings").forEach { name ->
+                            DropdownMenuItem(text={Text(name)},onClick={menu=false;stack.add(SecondaryRoute(name))})
+                        }
+                    }
+                    currentDeck?.let { deck ->
+                        DropdownMenuItem(text={Text("Ask AI about this deck")},onClick={menu=false;stack.add(ChatRoute(deck.id))})
+                        DropdownMenuItem(text={Text(if(deckTrash)"Show active cards"else"Card trash")},onClick={menu=false;deckTrash=!deckTrash})
+                        DropdownMenuItem(text={Text("Study options")},onClick={menu=false;setupDecks=deck.id;setupFilter="all"},enabled=!deck.archived)
+                        DropdownMenuItem(text={Text("Edit deck")},onClick={menu=false;editDeckId=deck.id},enabled=state.online&&!state.busy)
+                        DropdownMenuItem(text={Text(if(deck.archived)"Unarchive"else"Archive")},onClick={menu=false;model.saveDeck(deck.copy(archived=!deck.archived)) {}},enabled=state.online&&!state.busy)
+                        DropdownMenuItem(text={Text("Move to trash")},onClick={menu=false;deleteDeckId=deck.id},enabled=state.online&&!state.busy)
                     }
                 }
             }})},
@@ -102,13 +115,13 @@ import java.time.format.DateTimeFormatter
                                 "Archived decks" -> DecksScreen(latest,onDeck={stack.add(DeckRoute(it))},archived=true)
                                 else -> SettingsScreen(latest,model,onVoices)
                             }
-                            is DeckRoute -> DeckScreen(key,latest,model,onEdit={editDeckId=it},
+                            is DeckRoute -> DeckScreen(key,latest,model,trash=deckTrash,
                                 onStudy={
                                     val paused=latest.sessions.firstOrNull{!it.finished&&(it.deckIds.ifEmpty{it.items.map{item->item.card.deckId}.distinct()})==listOf(key.id)}
                                     if(paused!=null)stack.add(SessionRoute(paused.id))
                                     else model.startSession(setOf(key.id),"all","term",true,"practice",20){if(stack.lastOrNull()==key)stack.add(SessionRoute(it))}
                                 },
-                                onOptions={setupDecks=key.id;setupFilter="all"},onChat={stack.add(ChatRoute(key.id))},onDeleted={if(stack.lastOrNull()==key)stack.removeLastOrNull()})
+                                )
                             is ChatRoute -> ChatScreen(key.id,latest,model,onDeleted={if(stack.lastOrNull()==key){stack.removeLastOrNull();if(stack.lastOrNull() is DeckRoute)stack.removeLastOrNull()}},onCreated={
                                 if(key.creating && stack.lastOrNull()==key){stack.removeLastOrNull();stack.add(DeckRoute(key.id))}
                             })
@@ -116,6 +129,15 @@ import java.time.format.DateTimeFormatter
                         }
                     }
                 })
+            }
+        }
+    }
+    deleteDeckId?.let { id ->
+        val deck=state.decks.find{it.id==id}
+        if(deck!=null) ConfirmDialog("Move deck to trash?","You can restore this deck from Settings.",{deleteDeckId=null}) {
+            deleteDeckId=null
+            model.contentAction("decks",deck.id,deck.version,"trash") {
+                if((stack.lastOrNull() as? DeckRoute)?.id==id)stack.removeLastOrNull()
             }
         }
     }
@@ -185,14 +207,13 @@ import java.time.format.DateTimeFormatter
         items(state.sessions,key={it.id}){s->ListItem(headlineContent={Text(s.title)},supportingContent={Text("${s.mode} · ${if(s.finished)"Complete"else"Paused"}${if(s.syncConflict)" · saved on this device; cloud conflict"else""}")},trailingContent={TextButton({onResume(s.id)}){Text(if(s.finished)"View"else"Resume")}})}
     }
 }
-@Composable private fun DeckScreen(route:DeckRoute,state:FlashState,model:FlashViewModel,onEdit:(String)->Unit,
-    onStudy:()->Unit,onOptions:()->Unit,onChat:()->Unit,onDeleted:()->Unit) {
-    var trash by rememberSaveable(route.id){mutableStateOf(false)}
+@Composable private fun DeckScreen(route:DeckRoute,state:FlashState,model:FlashViewModel,trash:Boolean,onStudy:()->Unit) {
+
     var search by rememberSaveable(route.id){mutableStateOf("")}
     val deck=state.decks.find{it.id==route.id}
-    var menu by remember{mutableStateOf(false)}
+
     var deleteTarget by remember{mutableStateOf<FlashCard?>(null)}
-    var deleteDeck by remember{mutableStateOf(false)}
+
     var editorJson by rememberSaveable(route.id){mutableStateOf<String?>(null)}
     val editor=editorJson?.let{Codec.decodeFromString<FlashCard>(it)}
     var error by remember(route.id){mutableStateOf("")}
@@ -207,19 +228,6 @@ import java.time.format.DateTimeFormatter
         item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             if(deck!=null&&!deck.archived) Button(onStudy,enabled=cards.isNotEmpty()){Text(if(state.sessions.any{!it.finished&&(it.deckIds.ifEmpty{it.items.map{item->item.card.deckId}.distinct()})==listOf(route.id)})"Resume study"else"Study")}
             OutlinedButton({editorJson=Codec.encodeToString(FlashCard.serializer(),FlashCard(deckId=route.id,order=(cards.maxOfOrNull{it.order}?:0)+1000))},enabled=deck!=null&&state.online){Text("Add card")}
-            Box {
-                IconButton({menu=true}){Icon(Icons.Default.MoreVert,"Deck options")}
-                DropdownMenu(menu,{menu=false}) {
-                    DropdownMenuItem(text={Text("Ask AI about this deck")},onClick={menu=false;onChat()})
-                    DropdownMenuItem(text={Text(if(trash)"Show active cards"else"Card trash")},onClick={menu=false;trash=!trash})
-                    DropdownMenuItem(text={Text("Study options")},onClick={menu=false;onOptions()})
-                    if(deck!=null) {
-                        DropdownMenuItem(text={Text("Edit deck")},onClick={menu=false;onEdit(deck.id)})
-                        DropdownMenuItem(text={Text(if(deck.archived)"Unarchive"else"Archive")},onClick={menu=false;model.saveDeck(deck.copy(archived=!deck.archived)) {}})
-                        DropdownMenuItem(text={Text("Move to trash")},onClick={menu=false;deleteDeck=true})
-                    }
-                }
-            }
         }}
         item{OutlinedTextField(search,{search=it},label={Text("Find a card")},modifier=Modifier.fillMaxWidth(),singleLine=true)}
         if(loading&&cards.isEmpty())item{CircularProgressIndicator()}
@@ -239,7 +247,6 @@ import java.time.format.DateTimeFormatter
             HorizontalDivider()
         }
     }
-    if(deleteDeck&&deck!=null)ConfirmDialog("Move deck to trash?","You can restore this deck from Settings.",{deleteDeck=false}){deleteDeck=false;model.contentAction("decks",deck.id,deck.version,"trash",onDeleted)}
     deleteTarget?.let{card->ConfirmDialog("Move card to trash?","You can restore this card from Card trash.",{deleteTarget=null}){deleteTarget=null;model.contentAction("cards",card.id,card.version,"trash")}}
     editor?.let{draft->CardEditor(draft,state.busy,onDismiss={editorJson=null},onSave={model.saveCard(it){editorJson=null}})}
 }

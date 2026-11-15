@@ -127,3 +127,9 @@ Remaining work from the design/audit
 - Tests ran under local Node 24; Functions declares Node 22. No live provider calls were made by the mocked unit tests.
 - UI uses a three-dot loading bubble and a title-free sheet with 64 dp creation buttons. Existing drafts prompt Resume draft / Start fresh. Multiple-conversation controls were removed.
 - Backend changes have not been deployed. The new APK has not been installed or launched in this pass.
+
+## Header overflow placement — November 15, 2026
+
+Deck-wide actions now live in the top app bar beside the deck title: Ask AI, card trash, study options, edit, archive and trash. The library menu already occupies the header. Card-specific actions stay on their individual rows. Menu state resets when the destination changes, and deck deletion retains its confirmation and returns to the library only after success.
+
+Kotlin compilation and git diff --check passed. No additional unit tests were added for this control-placement change. Device rendering remains unverified.
