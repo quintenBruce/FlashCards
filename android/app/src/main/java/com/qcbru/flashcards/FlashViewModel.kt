@@ -209,6 +209,27 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
             done(id)
         }
     }
+    fun clearDeckChat(deckId:String,done:(String)->Unit) = action {
+        val user=state.value.uid ?: return@action
+        val snapshot=state.value
+        val ids=deckConversationIds(deckId,snapshot.conversations,snapshot.chatRequests).toMutableSet()
+        ids.add("draft_$deckId")
+        repository.preferences.getString("creation_conversation_${user}_$deckId",null)?.let{ids.add(it)}
+        ids.forEach{chatJobs.remove(it)?.cancelAndJoin()}
+        repository.clearDeckChat(deckId,ids)
+        if(repository.uid==user) {
+            val freshId=newId()
+            repository.preferences.edit().putString("creation_conversation_${user}_$deckId",freshId).commit()
+            mutable.update{current->current.copy(
+                conversations=current.conversations.filterNot{it.deckId==deckId},
+                chatRequests=current.chatRequests.filterNot{it.deckId==deckId},
+                turns=current.turns.filterNot{it.conversationId in ids},
+                proposals=current.proposals.filterNot{it.deckId==deckId},
+                activeChats=current.activeChats-ids,
+            )}
+            done(freshId)
+        }
+    }
     fun sendMessage(deckId: String, conversationId: String, message: String) {
         val unresolved = state.value.chatRequests.firstOrNull { it.conversationId==conversationId && requestNeedsRecovery(it,state.value.turns) }
         if (unresolved != null) { notice("Check the previous request's status before sending another message."); return }

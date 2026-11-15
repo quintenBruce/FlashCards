@@ -16,3 +16,7 @@ fun chatTranscript(turns:List<Turn>,requests:List<ChatRequest>):List<ChatTranscr
     }
     return (replies+pending).sortedWith(compareByDescending<ChatTranscriptEntry>{it.createdAt}.thenByDescending{it.id})
 }
+
+fun deckConversationIds(deckId:String,conversations:List<Conversation>,requests:List<ChatRequest>):Set<String> =
+    (conversations.filter{it.deckId==deckId}.map{it.id}+
+        requests.filter{it.deckId==deckId}.map{it.conversationId}).toSet()

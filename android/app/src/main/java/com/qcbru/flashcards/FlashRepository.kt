@@ -380,6 +380,16 @@ class FlashRepository(private val context: Context, val database: FlashDatabase)
         }
         return null
     }
+    suspend fun clearDeckChat(deckId:String,knownIds:Set<String>) {
+        val user=uid ?: error("Sign in to clear conversation history")
+        val remote=cloud.collection("users").document(user).collection("conversations")
+            .whereEqualTo("deckId",deckId).get(Source.SERVER).await()
+        val ids=knownIds+remote.documents.map{it.id}
+        for(id in ids) {
+            check(uid==user){"Account changed while clearing history"}
+            deleteConversation(id)
+        }
+    }
     suspend fun deleteConversation(conversationId: String) {
         val user=uid ?: return
         call("deleteConversation",mapOf("id" to conversationId))

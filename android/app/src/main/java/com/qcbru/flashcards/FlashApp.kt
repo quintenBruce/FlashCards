@@ -44,7 +44,7 @@ import java.time.format.DateTimeFormatter
 
 @Serializable data object HomeRoute : NavKey
 @Serializable data class DeckRoute(val id: String) : NavKey
-@Serializable data class ChatRoute(val id: String, val creating: Boolean = false) : NavKey
+@Serializable data class ChatRoute(val id: String, val creating: Boolean = false, val conversationId: String? = null) : NavKey
 @Serializable data class SecondaryRoute(val name: String) : NavKey
 @Serializable data class SessionRoute(val id: String) : NavKey
 
@@ -54,6 +54,7 @@ import java.time.format.DateTimeFormatter
     val stack = rememberNavBackStack(HomeRoute)
     var addSheet by rememberSaveable { mutableStateOf(false) }
     var draftPrompt by rememberSaveable { mutableStateOf(false) }
+    var clearChatDeckId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteDeckId by rememberSaveable { mutableStateOf<String?>(null) }
     var newDeck by rememberSaveable { mutableStateOf(false) }
     var editDeckId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -64,7 +65,7 @@ import java.time.format.DateTimeFormatter
         if(state.notice.isNotEmpty()) { snackbar.showSnackbar(state.notice); model.clearNotice() }
     }
     LaunchedEffect(state.uid) {
-        if(state.uid == null) { stack.clear(); stack.add(HomeRoute); addSheet=false; draftPrompt=false; newDeck=false; editDeckId=null; setupDecks=null }
+        if(state.uid == null) { stack.clear(); stack.add(HomeRoute); addSheet=false; draftPrompt=false; clearChatDeckId=null; newDeck=false; editDeckId=null; setupDecks=null }
     }
     LaunchedEffect(state.pendingReminder,state.reminders) {
         state.reminders.find { it.id==state.pendingReminder }?.let {
@@ -84,7 +85,13 @@ import java.time.format.DateTimeFormatter
     Scaffold(snackbarHost={SnackbarHost(snackbar)},
         topBar={if(current !is SessionRoute) TopAppBar(title={Text(title)},
             navigationIcon={if(stack.size>1) IconButton({stack.removeLastOrNull()}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back")}},
-            actions={if(state.uid!=null && (current is HomeRoute || currentDeck!=null)) Box {
+            actions={
+                if(state.uid!=null && current is ChatRoute && !current.creating) {
+                    IconButton({clearChatDeckId=current.id},enabled=state.online&&!state.busy) {
+                        Icon(Icons.Default.DeleteSweep,"Clear conversation history")
+                    }
+                }
+                if(state.uid!=null && (current is HomeRoute || currentDeck!=null)) Box {
                 IconButton({menu=true}){Icon(Icons.Default.MoreVert,if(current is DeckRoute)"Deck options"else"More options")}
                 DropdownMenu(menu,{menu=false}) {
                     if(current is HomeRoute) {
@@ -121,13 +128,25 @@ import java.time.format.DateTimeFormatter
                                     model.startSession(setOf(key.id),"all","term",true,"practice",20){if(stack.lastOrNull()==key)stack.add(SessionRoute(it))}
                                 },
                                 )
-                            is ChatRoute -> ChatScreen(key.id,latest,model,onDeleted={if(stack.lastOrNull()==key){stack.removeLastOrNull();if(stack.lastOrNull() is DeckRoute)stack.removeLastOrNull()}},onCreated={
+                            is ChatRoute -> ChatScreen(key.id,latest,model,initialConversation=key.conversationId,onDeleted={if(stack.lastOrNull()==key){stack.removeLastOrNull();if(stack.lastOrNull() is DeckRoute)stack.removeLastOrNull()}},onCreated={
                                 if(key.creating && stack.lastOrNull()==key){stack.removeLastOrNull();stack.add(DeckRoute(key.id))}
                             })
                             is SessionRoute -> SessionScreen(latest.sessions.find{it.id==key.id},latest,model,onExit={stack.removeLastOrNull()},onSpeak=onSpeak)
                         }
                     }
                 })
+            }
+        }
+    }
+    clearChatDeckId?.let { deckId ->
+        ConfirmDialog("Clear conversation history?","This clears AI messages and pending suggestions for this deck. Your cards stay saved.",{clearChatDeckId=null}) {
+            clearChatDeckId=null
+            val origin=stack.lastOrNull()
+            model.clearDeckChat(deckId) { conversationId ->
+                if(stack.lastOrNull()==origin && origin is ChatRoute && origin.id==deckId) {
+                    stack.removeLastOrNull()
+                    stack.add(ChatRoute(deckId,conversationId=conversationId))
+                }
             }
         }
     }
@@ -231,7 +250,7 @@ import java.time.format.DateTimeFormatter
                 label={Text(if(resumableStudy(state.sessions,setOf(route.id))!=null)"Resume study"else"Study")},
                 leadingIcon={Icon(Icons.Default.School,null,Modifier.size(18.dp))})
             AssistChip(onClick={editorJson=Codec.encodeToString(FlashCard.serializer(),FlashCard(deckId=route.id,order=(cards.maxOfOrNull{it.order}?:0)+1000))},
-                enabled=deck!=null&&state.online,label={Text("Add card")},leadingIcon={Icon(Icons.Default.Add,null,Modifier.size(18.dp))})
+                enabled=deck!=null,label={Text("Add card")},leadingIcon={Icon(Icons.Default.Add,null,Modifier.size(18.dp))})
             AssistChip(onClick=onChat,enabled=deck!=null,label={Text("Ask AI")},leadingIcon={Icon(Icons.Default.ChatBubbleOutline,null,Modifier.size(18.dp))})
         }
         LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -322,11 +341,11 @@ import java.time.format.DateTimeFormatter
         .background(MaterialTheme.colorScheme.onSecondaryContainer,
             androidx.compose.foundation.shape.CircleShape))
 }
-@Composable private fun ChatScreen(deckId:String,state:FlashState,model:FlashViewModel,onDeleted:()->Unit,onCreated:()->Unit) {
+@Composable private fun ChatScreen(deckId:String,state:FlashState,model:FlashViewModel,initialConversation:String?,onDeleted:()->Unit,onCreated:()->Unit) {
     val conversationIds=(state.conversations.filter{it.deckId==deckId}.sortedByDescending{it.updatedAt}.map{it.id}+
         state.chatRequests.filter{it.deckId==deckId}.sortedByDescending{it.createdAt}.map{it.conversationId}).distinct()
     var selectedConversation by rememberSaveable(deckId){mutableStateOf<String?>(null)}
-    val conversation=selectedConversation?:model.repository.preferences.getString("creation_conversation_${state.uid}_$deckId",null)?:conversationIds.firstOrNull()?:"draft_$deckId"
+    val conversation=initialConversation?:selectedConversation?:model.repository.preferences.getString("creation_conversation_${state.uid}_$deckId",null)?:conversationIds.firstOrNull()?:"draft_$deckId"
     val requests=state.chatRequests.filter{it.conversationId==conversation}.sortedBy{it.createdAt}
     val active=conversation in state.activeChats
     val unresolved=requests.lastOrNull{it.state in listOf("pending","uncertain")}

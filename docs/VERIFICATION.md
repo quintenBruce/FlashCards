@@ -162,3 +162,11 @@ Added conversation previews for normal and large text. assembleDebug and diff wh
 - Trash is the sole removal workflow. Archive controls/navigation were removed. Legacy archived decks are visible and studyable. Trashed or purge-requested decks remain excluded. Added a regression case for unavailable decks and updated the legacy-archive expectation.
 - Removed Undo wording and added Previous for practice, including from completion. It returns to the last rated card with its previous confidence/queue restored, allowing a replacement rating. No undo snackbar was added.
 - Android unit tests and assembleDebug passed. Phone keyboard/scroll animation has not been visually exercised by the agent.
+
+## Clear deck chat and offline drafting — November 15, 2026
+
+Ask AI has a header Clear conversation history icon with confirmation. Clearing targets the current deck's conversations, pending requests, messages and proposals. It cancels local in-flight requests, uses the existing server deletion endpoint for locally known and remotely discovered conversations, and switches to a fresh conversation ID. Deck/card content is preserved.
+
+Add card now opens whenever the deck is loaded, including offline. Saving still uses the existing online mutation path. Save failure preserves the editor inputs.
+
+Two new scope tests cover clearing only the selected deck and finding requests before conversation metadata exists. All 25 Android unit tests and assembleDebug passed. Device installation and visual verification were not performed in this pass.
