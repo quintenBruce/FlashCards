@@ -1,5 +1,7 @@
 # FlashCards Android UI and workflow handoff
 
+Use the [screen design contract](DESIGN.md) for wireframes, exact control placement, interaction copy, accessibility and adaptive layout checks. This handoff covers the underlying behavior and repair order.
+
 Implement this in the existing Kotlin Compose app. Read AGENTS.md first. Use source inspection and Git only for this pass. Commit each coherent change. App launches, builds, emulators and test runs require separate authorization. This plan comes from source inspection. Device behavior, deployed service health and visual rendering are unverified.
 
 ## Destination map
