@@ -214,7 +214,7 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
                     }
                 }
             }}
-            item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){TextButton({model.duplicateDeck(deck)},enabled=state.online&&!state.busy&&deck.downloaded){Text("Duplicate deck")};TextButton({model.saveDeck(deck.copy(archived=!deck.archived))},enabled=state.online&&!state.busy){Text(if(deck.archived)"Unarchive"else"Archive")};TextButton({deleteCardId="deck"},enabled=state.online&&!state.busy){Text("Trash deck")}}}
+            item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){TextButton({model.duplicateDeck(deck)},enabled=state.online&&!state.busy&&deck.downloaded){Text("Duplicate deck")};TextButton({model.saveDeck(deck.copy(archived=!deck.archived)) {}},enabled=state.online&&!state.busy){Text(if(deck.archived)"Unarchive"else"Archive")};TextButton({deleteCardId="deck"},enabled=state.online&&!state.busy){Text("Trash deck")}}}
         }
     }
     if(newCard||cardId!=null)CardEditor(cards.find{it.id==cardId}?:FlashCard(deckId=route.id,order=(cards.maxOfOrNull{it.order}?:0)+1000),state.busy,
@@ -459,7 +459,7 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
         item{Heading("Settings",state.email)}
         item{Choice("Appearance",listOf("system","light","dark"),state.theme,model::theme)}
         item{Text("Pronunciation",style=MaterialTheme.typography.titleLarge);Text("Playback speed: ${"%.2f".format(state.rate)}×");Slider(state.rate,{model.speech(it,state.voice)},valueRange=.5f..1.3f);TextButton({voices=onVoices()}){Text("Load available voices")}}
-        if(voices.isNotEmpty())item{Column{TextButton({model.speech(state.rate,null)}){Text("Use language default")};voices.forEach{(name,label)->TextButton({model.speech(state.rate,name)}){Text("${if(state.voice==name)"✓ "else""}$label")}}}
+        if(voices.isNotEmpty())item{Column{TextButton({model.speech(state.rate,null)}){Text("Use language default")};voices.forEach{(name,label)->TextButton({model.speech(state.rate,name)}){Text("${if(state.voice==name)"✓ "else""}$label")}}}}
         item{HorizontalDivider();Text("AI budget",style=MaterialTheme.typography.titleLarge);Text("${state.usage.month.ifBlank{"This month"}} · $${"%.2f".format((state.usage.spent+state.usage.reserved)/1_000_000.0)} / $${"%.2f".format(state.usage.cap/1_000_000.0)}");Text("Includes pending reservations. Resets monthly in America/Chicago. Firebase billing is separate.",style=MaterialTheme.typography.bodySmall);if(state.usage.warning)Text("80% of your AI budget is reserved or spent.",color=MaterialTheme.colorScheme.error);TextButton(model::refresh,enabled=state.online&&!state.busy){Text("Retry pending grades & sync")}}
         item{HorizontalDivider();Text("Backups",style=MaterialTheme.typography.titleLarge);Button({model.exportBackup{text->onExport(text,"flashcards-backup.json")}},enabled=state.online&&!state.busy){Text("Export complete JSON backup")};TextButton(onOpenFile,enabled=state.online&&!state.busy){Text("Open backup to restore")}}
         item{Text("Downloaded decks",style=MaterialTheme.typography.titleLarge)}
