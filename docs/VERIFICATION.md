@@ -184,3 +184,11 @@ Footer destinations crossfade with a 120 ms entry and 90 ms exit. The reminder p
 Extracted reminder validation and the existing local clock for unit testing. Paused and deleted reminders are excluded from notification delivery and snoozing. Local snoozes record the reminder version and are excluded from rescheduling after an edit.
 
 All 39 Android unit tests passed, including 14 reminder tests for validation, selected days/decks, one-time expiration, time zones, daylight saving, pause state, stale snoozes and next occurrence calculation. assembleDebug and git diff --check passed. Device visual interaction and delivery of a real timed notification were not exercised.
+
+## Study page and session selection — November 15, 2026
+
+Replaced the Study page's checklist, three start buttons and mixed history with Continue cards, one New session form and recent results. Added deck selection with search, clear occupancy/offline status, real filter selection, collapsed session options, validated counts, cached eligibility counts and progress/results summaries. Added phone, large-text and wide Compose previews.
+
+Canonical resume selection consistently favors newer overlapping sessions, ignoring replaced, empty and completed snapshots. Opening a saved session reads the current persisted row and uses the existing transactional resume path. Resuming immediately updates visible state before navigation. Offline All selects cached decks. Explicitly missing decks are rejected and an empty picker selection cannot expand into all decks. Previous cannot reopen completed practice while another session occupies its decks.
+
+All 55 Android unit tests passed, including 16 new Study cases covering overlapping sessions, deck selection, offline behavior, filter eligibility, content versions, invalid options, progress and reopening history. assembleDebug and git diff --check passed. Previews and device interactions were not visually exercised.

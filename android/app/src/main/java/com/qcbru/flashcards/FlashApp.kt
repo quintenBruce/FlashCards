@@ -160,7 +160,16 @@ import java.time.format.DateTimeFormatter
                         when(key) {
                             is HomeRoute -> DecksScreen(latest,onDeck={stack.add(DeckRoute(it))})
                             is SecondaryRoute -> when(key.name) {
-                                "Study history" -> ReviewScreen(latest,onStudy={ids,filter->setupDecks=ids.joinToString(",");setupFilter=filter},onResume={stack.add(SessionRoute(it))})
+                                "Study history" -> StudyScreen(
+                                    latest,
+                                    onStart={ids,options->
+                                        model.startSession(ids,options.filter,options.direction,options.shuffle,options.mode,options.count) {
+                                            if(stack.lastOrNull()==key)stack.add(SessionRoute(it))
+                                        }
+                                    },
+                                    onOpen={id->model.openStudySession(id){if(stack.lastOrNull()==key)stack.add(SessionRoute(it))}},
+                                    onDecks={while(stack.size>1)stack.removeLastOrNull()}
+                                )
                                 "Reminders" -> RemindersScreen(latest,model,onNotifications)
                                 else -> SettingsScreen(latest,model,onVoices)
                             }
@@ -249,20 +258,6 @@ private fun isFooterDestination(key:Any) = key is HomeRoute || key is SecondaryR
 }
 @Composable private fun Empty(title:String,body:String) {
     Column(Modifier.fillMaxWidth().padding(vertical=24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {Text(title,style=MaterialTheme.typography.titleLarge);Text(body,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-}
-@Composable private fun ReviewScreen(state:FlashState,onStudy:(Set<String>,String)->Unit,onResume:(String)->Unit) {
-    var selected by rememberSaveable{mutableStateOf(listOf<String>())}
-    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        item{Heading("Keep it fresh","Review across decks, or revisit what you already know.")}
-        items(state.decks.filter{it.deletedAt==null},key={it.id}){d->Row(verticalAlignment=Alignment.CenterVertically){Checkbox(d.id in selected,{selected=if(it)selected+d.id else selected-d.id});Text(d.title)}}
-        item{Text("No selection includes all active decks.",style=MaterialTheme.typography.bodySmall)}
-        item{Button({onStudy(selected.toSet(),"struggling")},modifier=Modifier.fillMaxWidth()){Text("Practice struggling cards")}}
-        item{OutlinedButton({onStudy(selected.toSet(),"known")},modifier=Modifier.fillMaxWidth()){Text("Refresh known cards")}}
-        item{OutlinedButton({onStudy(selected.toSet(),"all")},modifier=Modifier.fillMaxWidth()){Text("Study all selected decks")}}
-        item{Text("Session history",style=MaterialTheme.typography.titleLarge)}
-        if(state.sessions.isEmpty())item{Empty("Your first session awaits","Study history and unfinished sessions will appear here.")}
-        items(state.sessions,key={it.id}){s->ListItem(headlineContent={Text(s.title)},supportingContent={Text("${s.mode} · ${if(s.finished)"Complete"else"Paused"}${if(s.syncConflict)" · saved on this device; cloud conflict"else""}")},trailingContent={TextButton({onResume(s.id)}){Text(if(s.finished)"View"else"Resume")}})}
-    }
 }
 @Composable private fun DeckScreen(route:DeckRoute,state:FlashState,model:FlashViewModel,trash:Boolean,onChat:()->Unit,onStudy:()->Unit) {
 
@@ -470,8 +465,8 @@ private fun isFooterDestination(key:Any) = key is HomeRoute || key is SecondaryR
     if(session==null){Column(Modifier.fillMaxSize().padding(24.dp),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){
         Text(if(state.loading)"Loading saved sessions…"else"This session could not be loaded.")
         if(state.loading)CircularProgressIndicator()
-        else Text("Return to your decks and start again. Your saved sessions remain in Review.")
-        TextButton(onExit){Text("Back to decks")}
+        else Text("Return to Study to open a saved session.")
+        TextButton(onExit){Text("Go back")}
     };return}
     val sessionSaving=session.id in state.savingSessions
     var answer by rememberSaveable(session.id,session.cursor){mutableStateOf("")}
@@ -497,7 +492,7 @@ private fun isFooterDestination(key:Any) = key is HomeRoute || key is SecondaryR
                     }
                 }
             }
-            if(session.undoJson!=null)OutlinedButton({model.undo(session)},enabled=!sessionSaving){Text("Previous")}
+            if(session.undoJson!=null&&session.supersededBy==null)OutlinedButton({model.undo(session)},enabled=!sessionSaving&&canReturnToPrevious(session,state.sessions)){Text("Previous")}
             Button(onExit,modifier=Modifier.fillMaxWidth()){Text("Done")}
         }else if(item!=null) {
             val completed=if(session.mode=="practice")session.completed.size else session.cursor
@@ -519,7 +514,7 @@ private fun isFooterDestination(key:Any) = key is HomeRoute || key is SecondaryR
                         }
                     }
                     }
-                    TextButton({model.undo(session)},enabled=session.undoJson!=null&&!sessionSaving){Text("Previous")}
+                    TextButton({model.undo(session)},enabled=canReturnToPrevious(session,state.sessions)&&!sessionSaving){Text("Previous")}
                 }else Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){OutlinedButton({model.advance(session,-1)},enabled=session.cursor>0&&!sessionSaving){Text("Previous")};OutlinedButton({model.advance(session,1)},enabled=!sessionSaving){Text(if(session.cursor==session.items.lastIndex)"Finish"else"Next")}}
             }else {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -580,7 +575,8 @@ private fun isFooterDestination(key:Any) = key is HomeRoute || key is SecondaryR
         Row(verticalAlignment=Alignment.CenterVertically){Switch(shuffle,{shuffle=it});Text("Shuffle cards")}
         Field("Cards (1–100)",count,{count=it})
         Text("One High rating completes a card in this session. Low and Medium return later.")
-        Button({onStart(filter,direction,shuffle,mode,count.toIntOrNull()?.coerceIn(1,100)?:20)},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text("Start session")}
+        if(count.toIntOrNull() !in 1..100)Text("Choose between 1 and 100 cards.",color=MaterialTheme.colorScheme.error)
+        Button({onStart(filter,direction,shuffle,mode,count.toInt())},enabled=!busy&&count.toIntOrNull() in 1..100,modifier=Modifier.fillMaxWidth()){Text("Start session")}
     }
 }
 @Composable private fun DeckEditor(original:Deck?,busy:Boolean,onDismiss:()->Unit,onSave:(Deck)->Unit) {

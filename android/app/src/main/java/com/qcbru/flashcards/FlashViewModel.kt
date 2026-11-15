@@ -126,11 +126,17 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
     fun removeDownload(deck: Deck) = action { repository.removeDownload(deck.id) }
     fun import(deck: Deck, cards: List<FlashCard>, done: () -> Unit) = action { repository.importCards(deck,cards); done() }
     fun startSession(deckIds: Set<String>, filter: String, direction: String, shuffle: Boolean, mode: String, count: Int, done: (String) -> Unit) = action {
-        val selected=state.value.decks.filter{(deckIds.isEmpty()||it.id in deckIds)&&it.deletedAt==null&&!it.purgeRequested}
-        resumableStudy(state.value.sessions,selected.map{it.id}.toSet())?.let{existing->
+        StudyOptions(filter,direction,shuffle,mode,count).validate()
+        // Saved snapshots can be resumed even if a deck needs to be fetched again.
+        val activeIds=state.value.decks.filter{it.deletedAt==null&&!it.purgeRequested}.map{it.id}.toSet()
+        require(deckIds.all{it in activeIds}){"A selected deck is unavailable. Choose your decks again."}
+        val resumeScope=if(deckIds.isEmpty())activeIds else deckIds.intersect(activeIds)
+        resumableStudy(state.value.sessions,resumeScope)?.let{existing->
             val resumed=repository.startOrResumeSession(existing)
+            mutable.update { it.copy(sessions=it.sessions.filterNot{saved->saved.id==resumed.id}+resumed) }
             done(resumed.id);return@action
         }
+        val selected=selectedStudyDecks(state.value.decks,deckIds,repository.online())
         selected.forEach{repository.prepareDeck(it.id)}
         val user=repository.uid ?: error("Sign in to study")
         val rows=withContext(Dispatchers.IO){repository.dao.list(user,"cards")}
@@ -144,6 +150,15 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
         mutable.update { it.copy(sessions=it.sessions.filterNot{existing->existing.id==saved.id}+saved) }
         Log.i("FlashCardsSession","opening sessionId=${saved.id}")
         done(saved.id)
+    }
+    fun openStudySession(id:String,done:(String)->Unit) = action {
+        val user=repository.uid ?: error("Sign in to study")
+        val stored=withContext(Dispatchers.IO){repository.dao.get(user,"sessions",id)} ?: error("This saved session is unavailable.")
+        val session=Codec.decodeFromString<StudySession>(stored.body)
+        val opened=if(session.finished||session.submitted||session.supersededBy!=null)session else repository.startOrResumeSession(session)
+        check(repository.uid==user){"Account changed while opening study"}
+        mutable.update{it.copy(sessions=it.sessions.filterNot{saved->saved.id==opened.id}+opened)}
+        done(opened.id)
     }
     private fun studyAction(session: StudySession, block: suspend (StudySession) -> StudySession) {
         val user=state.value.uid ?: return
@@ -166,7 +181,10 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun reveal(session: StudySession) = studyAction(session) { repository.persistSession(it.copy(revealed = !it.revealed,revision = it.revision+1)) }
     fun rate(session: StudySession, confidence: String) = studyAction(session) { repository.rate(it,confidence) }
-    fun undo(session: StudySession) = studyAction(session) { repository.undo(it) }
+    fun undo(session: StudySession) = studyAction(session) {
+        check(canReturnToPrevious(it,state.value.sessions)){"Another study session uses this deck. Continue that session first."}
+        repository.undo(it)
+    }
     fun answer(session: StudySession, answer: String) = studyAction(session) {
         require(answer.length<=4000) { "Please keep this answer under 4,000 characters" }
         repository.answer(it,answer)

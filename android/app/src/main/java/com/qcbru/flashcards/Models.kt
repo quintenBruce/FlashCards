@@ -157,5 +157,4 @@ fun StudySession.studyDeckIds():Set<String> =
 
 /** Combined study also occupies each included deck until completion. */
 fun resumableStudy(sessions:List<StudySession>, deckIds:Set<String>):StudySession? =
-    sessions.filter{!it.finished&&!it.submitted&&it.studyDeckIds().any{deck->deck in deckIds}}
-        .maxWithOrNull(compareBy<StudySession>{it.updatedAt}.thenBy{it.id})
+    activeStudies(sessions).firstOrNull{it.studyDeckIds().any{deck->deck in deckIds}}

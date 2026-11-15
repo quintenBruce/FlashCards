@@ -49,3 +49,17 @@ private fun sample()=StudyItem("example_term",FlashCard(term="I miss you",defini
         }
     }
 }
+
+@Preview(name="Study phone",widthDp=360,heightDp=740,showBackground=true)
+@Preview(name="Study large text",widthDp=360,heightDp=740,fontScale=2f,showBackground=true)
+@Preview(name="Study wide",widthDp=760,heightDp=740,showBackground=true)
+@Composable private fun StudyPreview() {
+    val item = sample()
+    FlashTheme("light") {
+        StudyScreen(FlashState(
+            decks=listOf(Deck(id=item.card.deckId,title="Travel Spanish",downloaded=true),Deck(id="class",title="Words from class",downloaded=true)),
+            cards=listOf(item.card, item.card.copy(id="class_card",deckId="class")),
+            sessions=listOf(StudySession(id="resume",title="Travel Spanish",deckIds=listOf(item.card.deckId),items=listOf(item),queue=listOf(item.key)))
+        ),onStart={_,_->},onOpen={},onDecks={})
+    }
+}
