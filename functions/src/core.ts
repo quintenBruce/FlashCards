@@ -6,7 +6,7 @@ import { logger } from 'firebase-functions';
 import { createHash, randomUUID } from 'node:crypto';
 
 initializeApp();
-export const db = getFirestore();
+export const db = getFirestore('default');
 export const auth = getAuth();
 export const region = process.env.FUNCTIONS_REGION || 'us-south1';
 export const root = (uid: string) => db.collection('users').doc(uid);

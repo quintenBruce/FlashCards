@@ -34,9 +34,9 @@ Once the connector is available:
 1. Read the Firebase environment and confirm `flashcards-6b1ac`.
 2. List apps in that project. Reuse the Android app if the package matches;
    otherwise register `com.qcbru.flashcards` with nickname FlashCards Android.
-3. Inspect existing Firestore edition/location. Use the existing default instance
-   when compatible; do not replace databases or change location without a concrete
-   migration decision.
+3. Use the existing Standard, Native-mode Firestore instance whose literal ID is
+   `default` in `us-south1`. It is a named database, distinct from `(default)`.
+   The Android client, backend, and rules/index deployment explicitly target it.
 4. Enable/verify Google sign-in and add the signing fingerprints for the actual
    Android keystore. Determine the owner/support email from the authorized account.
 5. Download the Android app config with the official tools into

@@ -7,10 +7,13 @@ connect the app. Never select the Reminder Firebase project for this app.
 ## 1. Firebase
 
 1. Use the existing Firebase project `flashcards-6b1ac`. The committed
-   `.firebaserc` selects it. Inspect its existing Firestore instance before any
-   provisioning; preserve its edition/location. The accepted app plan targets
-   Standard edition and Functions in `us-south1`. Verify billing before deploying
-   paid Cloud Functions. Do not create a replacement project.
+   `.firebaserc` selects it. The project already has a Standard, Native-mode
+   Firestore database with the literal ID `default` in `us-south1`. This is a
+   named database, distinct from `(default)`. The Android client, Admin SDK, and
+   Firestore deployment config explicitly target `default`; do not create a
+   second database to satisfy this setup. Firebase Admin's named-database API
+   remains a public preview, so review its support status before release.
+   Verify billing before deploying paid Cloud Functions.
 2. Enable Authentication → Google. Use your verified Google account.
 3. Register Android package `com.qcbru.flashcards`. Add your debug and release
    signing SHA-1/SHA-256 certificates. The user can obtain these with Android

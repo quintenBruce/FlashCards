@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
 
 class FlashRepository(private val context: Context, val database: FlashDatabase) {
     val auth = FirebaseAuth.getInstance()
-    private val cloud = FirebaseFirestore.getInstance()
+    private val cloud = FirebaseFirestore.getInstance("default")
     private val functions = FirebaseFunctions.getInstance("us-south1")
     val preferences = context.getSharedPreferences("flashcards", Context.MODE_PRIVATE)
     private val listeners = mutableListOf<ListenerRegistration>()
