@@ -16,7 +16,7 @@ Implement this in the existing Kotlin Compose app. Read AGENTS.md first. Use sou
 
 Remove global bottom tabs and the wide-screen rail from this workflow. Use one route-specific app bar. A compact overflow on the library app bar can reach Study history (including cross-deck review), Reminders, Archived decks and Settings. These preserve existing workflows without adding home sections. Keep the same destinations on wide screens, constrain reading width, and keep Back behavior identical. Show loading, offline or retry feedback where it explains the current action.
 
-## Source findings and fixes in implementation order
+## Source findings by workflow
 
 1. **Replace the nested navigation.** Start in `FlashApp.kt`, symbols `FlashApp`, `DecksScreen`, `DeckScreen`. Today HomeRoute switches on a separate tab string and DeckRoute has a chat flag. AI creates a random deck ID and opens the tabbed DeckScreen. Even opening a real deck before metadata arrives can select Chat permanently because the initial tab depends on a missing deck. Keep the current Navigation 3 stack. Introduce explicit serializable keys for manual creation, AI creation and existing-deck chat. Keep DeckRoute for cards and SessionRoute for studying. Allocate IDs on the navigation event, save them across recreation, and distinguish loading, unavailable and deleted decks from new AI drafts. Replace the manual creation route on successful save. Tie async navigation to the initiating route and signed-in user so a late callback cannot push a screen after Back. Clear user-scoped routes and sheet state on sign-out.
 
@@ -51,4 +51,104 @@ When runtime verification is authorized, use these acceptance scenarios:
 | Existing-deck chat, history, reminder, archived deck, sign-out | Each opens its own destination and Back returns to its caller. Existing data remains reachable only for its owner. |
 | Small phone, large text, keyboard, tablet | Composer and primary actions stay reachable, icon actions have accessible names, and global navigation never duplicates a child screen. |
 
-Suggested commits: navigation and library; automatic loading and write recovery; chat creation and proposal handling; study flow and secondary-screen cleanup. Keep the implementation focused on these paths.
+Use the implementation slices at the end of this document for commit order.
+
+## Deeper audit: start the repair work here
+
+The following traces are from the checked-in Compose, ViewModel, Room and callable implementations. The outcomes with explicit timing conditions are source-derived failure scenarios. No production incident, provider failure, missing deployment, or measured latency is assumed. The highest-priority work is preserving study progress, unblocking chat and making manual saves retryable. A navigation-only change would leave all three failure modes in place.
+
+### 1. Existing replies can lock a conversation
+
+**Trace.** In FlashApp.kt, ChatScreen disables Send when any request in the conversation is pending or uncertain. Its recovery row appears only for requests without a matching Turn. FlashRepository.sendMessage writes the turn and proposal in a transaction, then FlashViewModel.runChat saves the final request state in a separate operation. The cloud listener can also deliver a turn independently. Kill the process between those writes, or deliver the cloud turn after a timeout. On reopen the answer exists, the request still blocks Send, and the UI has removed its Check status button. The ViewModel independently enforces the same stale guard.
+
+**Repair.** Reconcile by (user, conversationId, requestId). Treat a persisted matching server turn as proof the send completed. Write terminal request state and response together for direct receipts. Reconcile previously stranded requests on read/startup using existing records. Drive the composer and the ViewModel guard from the same result. Missing proposal data can still need recovery after a successful send. Make that a separate inline action on the turn.
+
+| Evidence for one request | Conversation behavior |
+|---|---|
+| Active send, no turn | Show one outgoing message and progress. Prevent a second tap. |
+| No active job, pending receipt | Offer Check status, including after recreation. Reuse the request ID and original payload. |
+| Stored turn plus pending or uncertain local request | Show the reply once, settle the request, enable the next message. Recover a missing preview independently. |
+| Status lookup returns not_found | Existing repository path may submit the original immutable request once under the same ID. |
+| Server returns uncertain and no turn | Keep the original message recoverable. Explain that completion is unknown. Offer an explicit new conversation without silently resending the prompt. |
+| Server returns failed | Retain the prompt for editing. An intentional new send gets a new ID. |
+
+**Regression fixture.** Seed a pending request and a matching turn in Room, with no active job. Open the chat twice. Both visits show one reply, Send works, and neither visit invokes the provider again. Repeat with a referenced proposal missing and a delayed cloud snapshot.
+
+### 2. Proposal decisions can disagree with the saved deck
+
+**Trace.** In functions/src/ai.ts, approve returns the already-applied result when the proposal was applied earlier, even if the incoming choice is Reject. FlashRepository.confirm ignores the returned body and writes a local applied/rejected value based on the button tapped. A second device can therefore display Rejected for changes that were applied. The same method downloads the deck after every approval. An approved delete_deck moves the deck to trash, so download immediately fails its own availability check and reports a failure after a successful deletion.
+
+**Repair.** Decode the callable result and persist its actual terminal outcome. Reconcile ambiguous responses using the persisted proposal or request receipt. Branch on the accepted operations: creation opens its new deck, card edits refresh the existing deck, and deck deletion exits to the library without fetching the deleted deck. Keep a stale-version proposal visible with a way to request a fresh preview. Deduplicate navigation by proposal ID and origin route. When replaying old applied proposals on startup, render their outcome without navigating.
+
+**Regression fixtures.** Device A approves while B presses Reject on a stale preview. Both settle to Applied. Approve a deletion and observe one successful exit. Return to an old creation conversation after opening another deck and verify it stays put.
+
+### 3. A local rating can time out behind a network call
+
+**Trace.** FlashRepository.flush holds reviewMutex across its entire review_pending loop, including calls to syncReviewEvent. rate and undo require that mutex. FlashViewModel.studyAction gives the whole local operation 15 seconds, while a single default callable can wait 60 seconds. With a slow connection, a prior event can block rating the next card until the UI says saving timed out. SyncWorker and foreground refresh can also enter flush concurrently. Only the review loop has this mutex.
+
+**Repair.** Serialize queue draining per user, separately from immediate local edits. Commit a rating, session revision and pending event in one short local transaction. Claim the next event durably, release the local write lock for I/O, then reconcile its response in another short transaction. Preserve ordering per card and direction. Give Undo a durable distinction between a never-sent event and a sent event awaiting acknowledgement. Currently undo treats presence in review_pending as proof the server has never applied the event. If the server commits and its response is lost, deleting that row leaves the local and cloud confidence different. Reuse the existing event receipt, then apply the compensating undo exactly once where required.
+
+**Regression fixture.** Hold the first network acknowledgement open. Flip and rate a second card, then undo. Local actions complete while the network remains stalled. Simulate server commit followed by response loss, restart and drain twice. Verify the session cursor, confidence and progress event ID converge. Also verify a newer rating from another device survives a stale undo.
+
+### 4. Background sync can discard newer study work
+
+**Trace.** In FlashRepository.flush, the failed-precondition handler writes its captured session.copy(syncConflict = true) into Room. If the learner answered or rated another card while that network request was outstanding, this overwrites the newer local revision. FlashViewModel.observe can temporarily mask the loss by keeping an in-memory higher revision. Reopening the app then reads the overwritten row. The restoreRemoteSessions path only imports sessions missing locally, so a clean, existing local session also misses newer remote progress on refresh.
+
+**Repair.** In a transaction, re-read the latest local session before marking a conflict. Preserve its items, grades, cursor, undo and revision. Compare server versions when restoring: update a clean, older local copy, preserve pending local work and explicitly surface divergent progress in History. Handle pending grade work against the selected revision. Keep the cloud conflict visible after a restart. Avoid concurrent session uploads from worker and foreground refresh.
+
+**Sign-out case.** FlashRepository.signOut clears every Room row for the user, including unsynced offline ratings and sessions. Preserve the distinction between ordinary sign-out and confirmed account deletion. For ordinary sign-out with pending work, report which changes are still local and let the user sync first or explicitly discard them. The sign-out path must not claim success saving pending work while offline. Other accounts must never see the previous user's rows.
+
+**Regression fixtures.** Block a revision-4 upload, save revision 5 locally, then return a conflict for revision 4. After process recreation the user sees revision 5 with the conflict. For a clean local revision, refresh after advancing it on another device and resume the remote cursor. For an offline rating, cancel sign-out and verify the rating is still queued.
+
+### 5. New card identity and editor conflicts need explicit handling
+
+**Trace.** DeckScreen constructs FlashCard(...) as a fallback every time it composes the editor. A fresh UUID can arrive with an unrelated state emission while the visible fields stay unchanged. The same fallback handles an existing edit target disappearing. CardEditor remembers the text, but uses the latest base passed into Save. If a remote edit changes the card version while the editor is open, saving stale text with that newer version can silently overwrite the other edit. DeckEditor similarly remembers the original by ID but save success still depends on a subsequent fetch.
+
+**Repair.** Separate New from Edit. Allocate a new card/deck ID once per draft and pin the edit ID, original version and editable fields for its lifetime. If an existing target disappears, show “This card is no longer available” and preserve unsaved text for copying. Use the frozen version to detect a conflict, with Reload and Keep editing choices. Generate a mutation request ID for the submitted payload and reuse it on ambiguous retries. If the user changes that payload, reconcile the previous attempt before issuing a new operation. Separate local form validation, saving and opening the saved record.
+
+**Field contract.** Mirror functions/src/content.ts and core.ts where the user types: title 200 characters, description 2,000, term 2,000, definition 4,000, explanation 4,000, example 2,000, up to 20 alternatives per side, each up to 1,000. Preserve language defaults and validate language tags before Save. Keep term and definition visible, initially collapse examples, explanations and alternatives. Raise the error beside the offending field. Retain all entered text when a request fails.
+
+**Regression fixtures.** Rotate while typing, receive an unrelated Room update, then lose the response after Save. Retry creates one card with the original ID. Edit a card while another device edits or trashes it. The stale draft neither overwrites that edit nor creates a replacement implicitly.
+
+### 6. Study eligibility and history need consistent rules
+
+| Current source path | User-visible failure | Implementation decision and check |
+|---|---|---|
+| DeckScreen enables setup on downloaded alone. StudyEngine.create excludes archived decks. | An archived deck offers Study, then produces “No cards match.” | Hide Study for archived decks and offer Unarchive. For active decks distinguish loading, genuinely empty, filter miss and unavailable. |
+| StudyEngine.create applies count only to test, typed and multiple. startSession rejects serialized sessions above 650,000 bytes. | Large practice or browse sessions tell the user to select fewer cards, but their setup has no count control. | Offer a bounded subset when the selected pool is too large, preserve order/shuffle and show the resulting card count before starting. Account for wide text and both directions. |
+| saveSession on the server caps the full wire value at 700,000 bytes. Grades and typed answers accumulate after the initial client size check. | A locally valid session can later fail every upload because it grew during study. | Reserve space for results or change the persisted representation with backward-compatible reads. Keep local work recoverable and surface a permanent oversize error distinctly from a transient outage. |
+| StudySession has snapshot items and title but no original deck-selection field. | Matching unfinished sessions by title can resume a different same-named deck or a combined review. | Save an optional explicit deck scope for new sessions. For legacy records infer from distinct item.card.deckId when unambiguous. Verify two identically named decks and a combined session. |
+| FlashViewModel.startSession reads all selected cards, while FlashState.loading finishes on the first Room emission. | On a fresh account an empty local snapshot can appear before deck metadata arrives. | Track initial library sync and per-deck content readiness separately. Never infer “no decks,” “no cards,” or “start a new AI deck” from metadata still loading. |
+| answer can enqueue a grade. flush catches the grade exception, keeps its row, then SyncWorker may return success. | A pending grade has no guaranteed retry from that worker after the connection recovers. | Distinguish retryable failures from permanent/manual review. Reschedule retryable work with backoff. Allow manual assessment and preserve an override that lands while the grade is in flight. |
+
+### 7. Remove hidden costs that make the UI feel stuck
+
+- **One-star change.** saveCard writes one record, then downloads every page of cards in its deck. moveCard can do that once for every changed order, with a partial reorder if a later save fails. Keep a validated per-card result in Room on success. Use a single atomic reorder or a bounded neighbor move with stable ordering and a single reconciliation. Disable impossible first/last moves. Compare request counts for starring one card and moving one card in a 250-card deck. Neither should require hundreds of writes or repeated full-deck reads.
+- **Deleted deck blocks refresh.** refresh loops through every downloads marker before flush. Trashing a downloaded deck leaves its marker, while download rejects a deleted deck. A single stale marker can abort subsequent deck refreshes and skip pending-work flush in this path. Invalidate the marker when authoritative deletion is observed, distinguish an unavailable deck from a transient read failure, and isolate each deck refresh from unrelated sync. Keep historical session snapshots intact. Verify trashing deck A still allows refreshing deck B and syncing its progress.
+- **Snapshots can finish out of order.** observeCloud launches independent IO jobs that each clear and replace a collection. They check the UID but do not order snapshots for the same signed-in user or retire jobs from a previous listener registration. Serialize snapshot application per collection and ignore obsolete registrations. The progress listener also drops the entire snapshot whenever any review is pending. Merge or defer by affected card/direction and reconcile after the queue drains. Verify an unrelated remotely rated card appears while a local rating awaits acknowledgement.
+- **Home reads study history on every change.** DocumentDao.observe selects every row for the account. FlashViewModel.observe decodes every visible collection, including session snapshots, on emissions from the same documents table. FlashApp also observes and passes broad screen state. Split reads by screen when touching this path, derive the library from deck metadata, and load session details by ID. Large history must never gate showing cached deck titles. This is a source-level cost, with magnitude unmeasured.
+- **Background work disables unrelated controls.** FlashViewModel.action maps foreground saves, initialization and refresh into one busy flag. Scope progress and retry to the deck, request or session that owns them. Cached study and library navigation stay usable while a different deck refreshes. Replace raw App Check, budget, request-reference and server-log instructions across OperationErrors, observeCloud, ChatScreen and GradeFeedback. Keep actionable “Sign in again,” “Check status,” and “Try again” only where they invoke the appropriate recovery.
+
+### 8. Navigation and small-screen acceptance details
+
+| Surface | First view | Secondary interaction and back behavior |
+|---|---|---|
+| Library | One title, Search decks, deck titles, Add deck. No nested action buttons in a row. | Back from deck restores query and list position. A search miss offers Clear search. Treat the first cloud load and offline first launch separately. |
+| Create sheet | Two full-width touch targets. Focus starts on the sheet title or first option. | System Back, swipe-dismiss and outside tap close the sheet. Rapid taps produce exactly one child route. Dismiss the sheet before opening the next editor or keyboard. |
+| AI creation | Title “Create with AI”, one example prompt, history and composer. | Preserve unsent text on rotation. Existing unfinished drafts are available inside this screen. Apply/reject sits directly under the relevant preview. Keep the input visible as the keyboard opens and allow reading earlier messages without forced autoscroll. |
+| Deck | Title, cards, Study, Add card. For a loaded empty deck, prioritize Add card. | Keep Ask AI labeled in overflow. Put edit/copy/trash on the individual card menu. Give filtered-empty results a clear-filter action. Show language names where they distinguish the study directions. |
+| Study | Current prompt, progress, Listen and Flip. After reveal, show the answer and confidence controls. | Support buttons as well as swipe. Label progress consistently (card position versus completed items). Retain reveal, cursor and grading state across recreation. Text/choices and controls must remain reachable at large font sizes with the IME open. |
+| Reminder deep link | Consume account, reminder and occurrence once. Open the selected study flow after saved state is ready. | MainActivity.onCreate currently rereads its intent on recreation. Use the occurrence identity from the intent URI to avoid reopening an already-consumed reminder on rotation. Handle a deleted reminder with a single message and a route back to the library. |
+
+### 9. Implementation slices for a smaller model
+
+Work through one slice per commit. Read the named methods and their callers before editing. The destination map defines the final UI. These slices give the dependency order for the deeper fixes.
+
+1. **Stabilize local session writes.** FlashRepository.{rate,undo,flush,writeSession,restoreRemoteSessions}, FlashViewModel.studyAction, SyncWorker and DocumentDao. Preserve legacy queues and revisions. Cover slow review acknowledgement, ambiguous undo, latest-revision conflict and pending data at sign-out.
+2. **Reconcile chat receipts and decisions.** FlashRepository.{sendMessage,confirm}, FlashViewModel.{observe,sendMessage,runChat}, ChatScreen and the approve response contract. Start with the stranded request fixture. Check applied, rejected, expired, edited and deleted-deck proposals before moving chat into its own route.
+3. **Make manual saves and reads independent.** FlashRepository.{saveDeck,saveCard,download,refresh}, deck/card editors and their ViewModel actions. Add exact-deck preparation, draft identity, field validation and partial-success recovery. Verify existing downloads markers still represent complete local snapshots. If introducing durable pending mutations, key them by signed-in user and replay immutable payloads only.
+4. **Replace the screen hierarchy.** FlashApp, MainActivity, UiPreviews. Wire library, bottom sheet, creation, deck, chat, study and secondary routes. Remove every obsolete launcher, callback, label and preview reference reachable from the old UI. Keep file-format support that still has non-UI callers. Follow one system Back press from every destination, including after async success.
+5. **Complete study and secondary states.** Models.StudyEngine, startSession, SessionScreen, ReviewScreen, reminder navigation and settings. Exercise archived/empty/oversize study, Browse finish, pending grades and saved-session compatibility. Put archive/trash/recovery behind intentional secondary actions.
+6. **Verify the integrated paths.** Existing StudyEngineTest covers directional ratings and small pools. FlashCardFaceTest checks a click callback. Backend chat and transaction tests cover same-request replay and stale targets. These do not exercise Room/listener ordering, a recreated Compose destination or concurrent local/cloud edits. Add focused regression cases for the timing scenarios above where existing coverage is missing. For this source-only pass, inspect the assertions, diff, tracked files and unreachable copy. Record runtime cases as pending until execution is authorized.
+
+**A complete handoff from the implementer includes** commit IDs, a list of repaired failure paths and their regression cases, the exact checks performed, and any remaining device/service-dependent observations. Confirm the home screen contract independently of chat and study correctness.
