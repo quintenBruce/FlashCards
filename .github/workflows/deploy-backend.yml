@@ -3,6 +3,18 @@ name: Deploy Firebase backend
 on:
   push:
     branches: [main]
+    paths:
+      - 'functions/**'
+      - 'shared/src/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
+      - 'firebase.json'
+      - '.firebaserc'
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
 
 permissions:
@@ -37,6 +49,8 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: '11.25.0'
+          cache: true
+          cache_dependency_path: pnpm-lock.yaml
 
       - name: Install pinned dependencies
         run: pnpm install --frozen-lockfile
