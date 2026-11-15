@@ -74,7 +74,9 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
                     proposals = (read("proposals") { Codec.decodeFromString<Proposal>(it) }+read("chat_proposals") { Codec.decodeFromString<Proposal>(it) })
                         .sortedBy { if(it.state=="pending")1 else 0 }.distinctBy { it.id },
                     conversations = read("conversations") { Codec.decodeFromString<Conversation>(it) }.filter { it.deletedAt == null },
-                    chatRequests = read("chat_requests") { Codec.decodeFromString<ChatRequest>(it) },
+                    chatRequests = read("chat_requests") { Codec.decodeFromString<ChatRequest>(it) }.map { request ->
+                        if((read("turns"){Codec.decodeFromString<Turn>(it)}+read("chat_turns"){Codec.decodeFromString<Turn>(it)}).any{it.id==request.id})request.copy(state="succeeded",error="") else request
+                    },
                     usage = read("usage") { Codec.decodeFromString<Usage>(it) }.maxByOrNull { it.month } ?: Usage(),
                     notice=decodeFailure?:it.notice) }
             }
@@ -103,8 +105,8 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
         mutable.value = FlashState(online = repository.online(),theme = state.value.theme)
     }
     fun refresh() = action { repository.refresh() }
-    fun saveDeck(deck: Deck, done: () -> Unit) = action { repository.saveDeck(deck); done() }
-    fun saveCard(card: FlashCard, done: () -> Unit = {}) = action { repository.saveCard(card); done() }
+    fun saveDeck(deck: Deck, done: () -> Unit) = action { val user=repository.uid; repository.saveDeck(deck); if(user==repository.uid)done() }
+    fun saveCard(card: FlashCard, done: () -> Unit = {}) = action { val user=repository.uid; repository.saveCard(card); if(user==repository.uid)done() }
     fun duplicateDeck(deck: Deck) = action {
         val copy = deck.copy(id = newId(),title = "${deck.title} (copy)",version = 0,archived = false,deletedAt = null)
         repository.saveDeck(copy)
@@ -119,14 +121,18 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
             for ((index,value) in reordered.withIndex()) if (value.order != index*1000L) repository.saveCard(value.copy(order = index*1000L))
         }
     }
-    fun contentAction(entity: String, id: String, version: Int, actionName: String) = action { repository.contentAction(entity,id,version,actionName) }
+    fun contentAction(entity: String, id: String, version: Int, actionName: String, done: () -> Unit = {}) = action { repository.contentAction(entity,id,version,actionName); done() }
     fun download(deck: Deck) = action { repository.download(deck.id) }
     fun removeDownload(deck: Deck) = action { repository.removeDownload(deck.id) }
     fun import(deck: Deck, cards: List<FlashCard>, done: () -> Unit) = action { repository.importCards(deck,cards); done() }
     fun startSession(deckIds: Set<String>, filter: String, direction: String, shuffle: Boolean, mode: String, count: Int, done: (String) -> Unit) = action {
-        val s = state.value
-        val decks = s.decks.filter { deckIds.isEmpty() || it.id in deckIds }
-        check(decks.none { !it.downloaded && !it.archived && it.deletedAt == null }) { "Download the selected decks first" }
+        val selected=state.value.decks.filter{(deckIds.isEmpty()||it.id in deckIds)&&!it.archived&&it.deletedAt==null&&!it.purgeRequested}
+        selected.forEach{repository.prepareDeck(it.id)}
+        val user=repository.uid ?: error("Sign in to study")
+        val rows=withContext(Dispatchers.IO){repository.dao.list(user,"cards")}
+        val freshCards=rows.map{Codec.decodeFromString<FlashCard>(it.body)}
+        val s=state.value.copy(cards=freshCards)
+        val decks=selected.map{it.copy(downloaded=true)}
         val session = withContext(Dispatchers.Default) { StudyEngine.create(decks,s.cards,s.progress,filter,direction,shuffle,mode,count) }
         check(session.items.isNotEmpty()) { "No cards match these filters. Try All or another direction." }
         check(Codec.encodeToString(session).toByteArray().size <= 650000) { "Select fewer cards for this session" }
@@ -164,7 +170,7 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
     fun advance(session: StudySession, delta: Int = 1) = studyAction(session) { current ->
         val next = current.cursor+delta
         repository.persistSession(current.copy(cursor = next.coerceIn(0,current.items.lastIndex),revealed = false,
-            finished = if (current.mode == "browse") false else next >= current.items.size, submitted = if (current.mode == "test") next >= current.items.size else current.submitted,
+            finished = next >= current.items.size, submitted = if (current.mode == "test") next >= current.items.size else current.submitted,
             revision = current.revision+1,updatedAt = System.currentTimeMillis()))
     }
     fun overrideGrade(session: StudySession, key: String, verdict: String) = studyAction(session) { current ->
@@ -201,7 +207,7 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    fun confirm(proposal: Proposal, approve: Boolean) = action { repository.confirm(proposal,approve) }
+    fun confirm(proposal: Proposal, approve: Boolean, done: () -> Unit = {}) = action { repository.confirm(proposal,approve); done() }
     fun saveReminder(reminder: StudyReminder, done: () -> Unit) = action { repository.saveReminder(reminder); done() }
     fun deleteReminder(reminder: StudyReminder) = action { repository.deleteReminder(reminder) }
     fun deleteConversation(id: String) = action { repository.deleteConversation(id) }

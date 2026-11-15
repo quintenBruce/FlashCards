@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation3.runtime.*
 import androidx.navigation3.ui.NavDisplay
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -38,90 +39,103 @@ import java.time.*
 import java.time.format.DateTimeFormatter
 
 @Serializable data object HomeRoute : NavKey
-@Serializable data class DeckRoute(val id: String, val chat: Boolean = false) : NavKey
+@Serializable data class DeckRoute(val id: String) : NavKey
+@Serializable data class ChatRoute(val id: String, val creating: Boolean = false) : NavKey
+@Serializable data class SecondaryRoute(val name: String) : NavKey
 @Serializable data class SessionRoute(val id: String) : NavKey
 
 @Composable fun FlashApp(state: FlashState, model: FlashViewModel, onSignIn: () -> Unit,
-    onExport: (String,String) -> Unit, onOpenFile: () -> Unit, onNotifications: () -> Unit,
+    onNotifications: () -> Unit,
     onSpeak: (String,String) -> Unit, onVoices: () -> List<Pair<String,String>>) {
     val stack = rememberNavBackStack(HomeRoute)
-    var tab by rememberSaveable { mutableStateOf("Decks") }
-    var editDeckId by rememberSaveable { mutableStateOf<String?>(null) }
+    var addSheet by rememberSaveable { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
     var newDeck by rememberSaveable { mutableStateOf(false) }
+    var editDeckId by rememberSaveable { mutableStateOf<String?>(null) }
     var setupDecks by rememberSaveable { mutableStateOf<String?>(null) }
     var setupFilter by rememberSaveable { mutableStateOf("all") }
-    var importDeckId by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(state.notice) { if(state.notice.isNotEmpty()) { snackbar.showSnackbar(state.notice); model.clearNotice() } }
-    LaunchedEffect(state.uid) { if(state.uid == null) { stack.clear(); stack.add(HomeRoute) } }
-    LaunchedEffect(state.pendingReminder,state.reminders) {
-        val reminder = state.reminders.find { it.id == state.pendingReminder }
-        if(reminder != null) { setupDecks=reminder.deckIds.joinToString(","); setupFilter=reminder.filter; model.clearReminder() }
+    LaunchedEffect(state.notice) {
+        if(state.notice.isNotEmpty()) { snackbar.showSnackbar(state.notice); model.clearNotice() }
     }
-    val inSession=stack.lastOrNull() is SessionRoute
-    val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val wide=maxWidth>=840.dp
-        Scaffold(containerColor=MaterialTheme.colorScheme.background,
-            snackbarHost={ SnackbarHost(snackbar) },
-            topBar={ if(!inSession) TopAppBar(title={ Text("flashcards",color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.SemiBold) },
-                navigationIcon={ if(stack.size>1) IconButton(onClick={stack.removeLastOrNull()}) { Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back") } },
-                actions={ if(state.uid!=null) IconButton(onClick=model::refresh,enabled=state.online&&!state.busy) { Icon(Icons.Default.Refresh,"Refresh") } }) },
-            bottomBar={ if(state.uid!=null&&!inSession&&!wide&&!keyboardVisible) NavigationBar {
-                listOf("Decks","Review","Reminders","Settings").forEach { name -> NavigationBarItem(selected=tab==name,
-                    onClick={tab=name;stack.clear();stack.add(HomeRoute)},icon={Icon(tabIcon(name),name)},label={Text(name)}) }
-            } }) { padding ->
-            Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-                if(wide&&state.uid!=null&&!inSession) NavigationRail {
-                    listOf("Decks","Review","Reminders","Settings").forEach { name -> NavigationRailItem(selected=tab==name,
-                        onClick={tab=name;stack.clear();stack.add(HomeRoute)},icon={Icon(tabIcon(name),name)},label={Text(name)}) }
+    LaunchedEffect(state.uid) {
+        if(state.uid == null) { stack.clear(); stack.add(HomeRoute); addSheet=false; newDeck=false; editDeckId=null; setupDecks=null }
+    }
+    LaunchedEffect(state.pendingReminder,state.reminders) {
+        state.reminders.find { it.id==state.pendingReminder }?.let {
+            setupDecks=it.deckIds.joinToString(","); setupFilter=it.filter; model.clearReminder()
+        }
+    }
+    val current=stack.lastOrNull()
+    val title=when(current) {
+        is DeckRoute -> state.decks.find { it.id==current.id }?.title ?: "Deck"
+        is ChatRoute -> if(current.creating) "Create with AI" else "Ask AI"
+        is SecondaryRoute -> current.name
+        else -> "Your decks"
+    }
+    Scaffold(snackbarHost={SnackbarHost(snackbar)},
+        topBar={if(current !is SessionRoute) TopAppBar(title={Text(title)},
+            navigationIcon={if(stack.size>1) IconButton({stack.removeLastOrNull()}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back")}},
+            actions={if(state.uid!=null && current is HomeRoute) Box {
+                IconButton({menu=true}){Icon(Icons.Default.MoreVert,"More options")}
+                DropdownMenu(menu,{menu=false}) {
+                    listOf("Study history","Reminders","Archived decks","Settings").forEach { name ->
+                        DropdownMenuItem(text={Text(name)},onClick={menu=false;stack.add(SecondaryRoute(name))})
+                    }
                 }
-                Column(Modifier.weight(1f).fillMaxHeight()) {
-                    if(!state.online&&state.uid!=null) Surface(color=MaterialTheme.colorScheme.secondaryContainer) {
-                        Text("Offline · Downloaded study and progress are available",Modifier.fillMaxWidth().padding(12.dp),style=MaterialTheme.typography.bodySmall)
-                    }
-                    if(state.busy&&!inSession) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    if(state.syncError.isNotBlank()) Surface(color=MaterialTheme.colorScheme.errorContainer) {
-                        Column(Modifier.padding(12.dp)){Text(state.syncError);TextButton(model::refresh,enabled=!state.busy){Text("Retry cloud sync")}}
-                    }
-                    if(state.uid==null) Welcome(onSignIn,state.busy)
-                    else NavDisplay(backStack=stack,onBack={ if(stack.size>1) stack.removeLastOrNull() },entryProvider={ key ->
+            }})},
+        floatingActionButton={if(state.uid!=null && current is HomeRoute) ExtendedFloatingActionButton(
+            onClick={addSheet=true},icon={Icon(Icons.Default.Add,null)},text={Text("Add deck")})}
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),contentAlignment=Alignment.TopCenter) {
+            Box(Modifier.widthIn(max=760.dp).fillMaxSize()) {
+                if(state.uid==null) Welcome(onSignIn,state.busy)
+                else NavDisplay(backStack=stack,onBack={if(stack.size>1)stack.removeLastOrNull()},entryProvider={ key ->
+                    NavEntry(key) {
+                        val latest by model.state.collectAsStateWithLifecycle()
                         when(key) {
-                            is HomeRoute -> NavEntry(key) {
-                                val screenState by model.state.collectAsStateWithLifecycle()
-                                when(tab) {
-                                    "Decks" -> DecksScreen(screenState,model,onDeck={stack.add(DeckRoute(it))},onCreate={newDeck=true},
-                                        onAI={stack.add(DeckRoute(newId(),true))},onImport={importDeckId=it},onResume={stack.add(SessionRoute(it))},
-                                        onEdit={editDeckId=it})
-                                    "Review" -> ReviewScreen(screenState,onStudy={ids,filter->setupDecks=ids.joinToString(",");setupFilter=filter},onResume={stack.add(SessionRoute(it))})
-                                    "Reminders" -> RemindersScreen(screenState,model,onNotifications)
-                                    else -> SettingsScreen(screenState,model,onExport,onOpenFile,onVoices)
-                                }
+                            is HomeRoute -> DecksScreen(latest,onDeck={stack.add(DeckRoute(it))})
+                            is SecondaryRoute -> when(key.name) {
+                                "Study history" -> ReviewScreen(latest,onStudy={ids,filter->setupDecks=ids.joinToString(",");setupFilter=filter},onResume={stack.add(SessionRoute(it))})
+                                "Reminders" -> RemindersScreen(latest,model,onNotifications)
+                                "Archived decks" -> DecksScreen(latest,onDeck={stack.add(DeckRoute(it))},archived=true)
+                                else -> SettingsScreen(latest,model,onVoices)
                             }
-                            is DeckRoute -> NavEntry(key) {
-                                val screenState by model.state.collectAsStateWithLifecycle()
-                                DeckScreen(key,screenState,model,onEdit={editDeckId=it},onImport={importDeckId=it},
-                                onStudy={setupDecks=key.id;setupFilter="all"},onExport=onExport,onSpeak=onSpeak) }
-                            is SessionRoute -> NavEntry(key) {
-                                val screenState by model.state.collectAsStateWithLifecycle()
-                                SessionScreen(screenState.sessions.find {it.id==key.id},screenState,model,
-                                onExit={stack.removeLastOrNull()},onSpeak=onSpeak) }
-                            else -> error("Unknown navigation destination")
+                            is DeckRoute -> DeckScreen(key,latest,model,onEdit={editDeckId=it},
+                                onStudy={
+                                    val paused=latest.sessions.firstOrNull{!it.finished&&(it.deckIds.ifEmpty{it.items.map{item->item.card.deckId}.distinct()})==listOf(key.id)}
+                                    if(paused!=null)stack.add(SessionRoute(paused.id))
+                                    else model.startSession(setOf(key.id),"all","term",true,"practice",20){if(stack.lastOrNull()==key)stack.add(SessionRoute(it))}
+                                },
+                                onOptions={setupDecks=key.id;setupFilter="all"},onChat={stack.add(ChatRoute(key.id))},onDeleted={if(stack.lastOrNull()==key)stack.removeLastOrNull()})
+                            is ChatRoute -> ChatScreen(key.id,latest,model,onDeleted={if(stack.lastOrNull()==key){stack.removeLastOrNull();if(stack.lastOrNull() is DeckRoute)stack.removeLastOrNull()}},onResumeDraft={id->if(stack.lastOrNull()==key){stack.removeLastOrNull();stack.add(ChatRoute(id,true))}},onCreated={
+                                if(key.creating && stack.lastOrNull()==key){stack.removeLastOrNull();stack.add(DeckRoute(key.id))}
+                            })
+                            is SessionRoute -> SessionScreen(latest.sessions.find{it.id==key.id},latest,model,onExit={stack.removeLastOrNull()},onSpeak=onSpeak)
                         }
-                    })
-                }
+                    }
+                })
             }
         }
     }
-    if(newDeck||editDeckId!=null) DeckEditor(state.decks.find {it.id==editDeckId},state.busy,
-        onDismiss={newDeck=false;editDeckId=null},onSave={deck->model.saveDeck(deck) {newDeck=false;editDeckId=null}})
+    if(addSheet) ModalBottomSheet(onDismissRequest={addSheet=false}) {
+        Column(Modifier.fillMaxWidth().padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Text("Add a deck",style=MaterialTheme.typography.titleLarge)
+            TextButton({addSheet=false;newDeck=true},Modifier.fillMaxWidth()){Text("Create manually")}
+            TextButton({addSheet=false;stack.add(ChatRoute(newId(),true))},Modifier.fillMaxWidth()){Text("Create with AI")}
+        }
+    }
+    if(newDeck||editDeckId!=null) DeckEditor(state.decks.find{it.id==editDeckId},state.busy,
+        onDismiss={newDeck=false;editDeckId=null},onSave={deck->
+            val creating=newDeck
+            model.saveDeck(deck){newDeck=false;editDeckId=null;if(creating)stack.add(DeckRoute(deck.id))}
+        })
     if(setupDecks!=null) StudySetup(setupFilter,state.busy,onDismiss={setupDecks=null},onStart={filter,direction,shuffle,mode,count->
-        val ids=setupDecks!!.split(',').filter {it.isNotEmpty()}.toSet()
-        model.startSession(ids,filter,direction,shuffle,mode,count) {id->setupDecks=null;stack.add(SessionRoute(id))}
+        model.startSession(setupDecks!!.split(',').filter{it.isNotBlank()}.toSet(),filter,direction,shuffle,mode,count){
+            setupDecks=null;stack.add(SessionRoute(it))
+        }
     })
-    importDeckId?.let { id -> state.decks.find {it.id==id}?.let { deck -> ImportDialog(deck,state,model,onOpenFile,onDismiss={importDeckId=null;model.imported("")}) } }
 }
-private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Review"->Icons.Default.School;"Reminders"->Icons.Default.Notifications;else->Icons.Default.Settings }
 @Composable private fun Welcome(onSignIn:()->Unit,busy:Boolean) {
     Column(Modifier.fillMaxSize().padding(28.dp),verticalArrangement=Arrangement.Center) {
         Icon(Icons.Default.Style,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(64.dp))
@@ -138,37 +152,20 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
 @Composable private fun Empty(title:String,body:String) {
     Column(Modifier.fillMaxWidth().padding(vertical=24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {Text(title,style=MaterialTheme.typography.titleLarge);Text(body,color=MaterialTheme.colorScheme.onSurfaceVariant)}
 }
-@Composable private fun DecksScreen(state:FlashState,model:FlashViewModel,onDeck:(String)->Unit,onCreate:()->Unit,onAI:()->Unit,
-    onImport:(String)->Unit,onResume:(String)->Unit,onEdit:(String)->Unit) {
-    var search by rememberSaveable{mutableStateOf("")};var sort by rememberSaveable{mutableStateOf("Recent")};var archived by rememberSaveable{mutableStateOf(false)}
-    val decks=state.decks.filter{it.deletedAt==null&&!it.purgeRequested&&it.archived==archived&&it.title.contains(search,true)}
-        .let {if(sort=="Name")it.sortedBy{d->d.title.lowercase()}else it.sortedByDescending{d->d.updatedAt}}
-    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
-        item{Heading("Your decks","A little practice, a lasting difference.")}
-        item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onCreate){Icon(Icons.Default.Add,null);Text("New deck")};OutlinedButton(onAI){Text("Create with AI")}}}
-        items(state.chatRequests.filter{request->state.decks.none{it.id==request.deckId}}.distinctBy{it.deckId},key={"draft_${it.deckId}"}){request->
-            OutlinedButton({onDeck(request.deckId)}){Text("Resume AI deck draft")}
-        }
-        item{OutlinedTextField(search,{search=it},label={Text("Search decks")},modifier=Modifier.fillMaxWidth(),singleLine=true)}
-        item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){FilterChip(sort=="Name",{sort=if(sort=="Name")"Recent"else"Name"},label={Text("Sort: $sort")});FilterChip(archived,{archived=!archived},label={Text("Archived")})}}
-        val unfinished=state.sessions.firstOrNull{!it.finished}
-        if(unfinished!=null)item{FilledTonalButton({onResume(unfinished.id)},modifier=Modifier.fillMaxWidth()){Text("Resume ${unfinished.title}")}}
+@Composable internal fun DecksScreen(state:FlashState,onDeck:(String)->Unit,archived:Boolean=false) {
+    var search by rememberSaveable { mutableStateOf("") }
+    val decks=state.decks.filter{it.deletedAt==null&&!it.purgeRequested&&it.archived==archived&&it.title.contains(search,true)}.sortedByDescending{it.updatedAt}
+    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=96.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        item{OutlinedTextField(search,{search=it},label={Text("Search decks")},singleLine=true,modifier=Modifier.fillMaxWidth())}
         if(state.loading)item{CircularProgressIndicator()}
-        if(decks.isEmpty())item{Empty("Room for something new","Create a deck manually or ask AI to build one from a topic or pasted notes.")}
+        else if(decks.isEmpty())item{
+            Empty(if(search.isBlank())"No decks yet"else"No matching decks",if(search.isBlank())"Add a deck to get started."else"Try another title.")
+            if(search.isNotBlank())TextButton({search=""}){Text("Clear search")}
+        }
         items(decks,key={it.id}){deck->
-            Card(onClick={onDeck(deck.id)},modifier=Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Text(deck.title,style=MaterialTheme.typography.titleLarge)
-                    if(deck.description.isNotBlank())Text(deck.description,maxLines=3)
-                    Text("${deck.termLanguage} ↔ ${deck.definitionLanguage}",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
-                    Text(if(deck.downloaded)"${state.cards.count{it.deckId==deck.id&&it.deletedAt==null}} cards · Available offline" else "Download to study offline",style=MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        TextButton({model.download(deck)},enabled=state.online&&!state.busy){Text(if(deck.downloaded)"Update download"else"Download")}
-                        TextButton({onEdit(deck.id)},enabled=state.online&&!state.busy){Text("Edit")}
-                        TextButton({onImport(deck.id)},enabled=state.online&&!state.busy){Text("Import")}
-                    }
-                }
-            }
+            ListItem(modifier=Modifier.clickable{onDeck(deck.id)},headlineContent={Text(deck.title,maxLines=2)},
+                supportingContent={if(deck.downloaded)Text("${state.cards.count{it.deckId==deck.id&&it.deletedAt==null&&!it.purgeRequested}} cards")})
+            HorizontalDivider()
         }
     }
 }
@@ -186,58 +183,65 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
         items(state.sessions,key={it.id}){s->ListItem(headlineContent={Text(s.title)},supportingContent={Text("${s.mode} · ${if(s.finished)"Complete"else"Paused"}${if(s.syncConflict)" · saved on this device; cloud conflict"else""}")},trailingContent={TextButton({onResume(s.id)}){Text(if(s.finished)"View"else"Resume")}})}
     }
 }
-@Composable private fun DeckScreen(route:DeckRoute,state:FlashState,model:FlashViewModel,onEdit:(String)->Unit,onImport:(String)->Unit,
-    onStudy:()->Unit,onExport:(String,String)->Unit,onSpeak:(String,String)->Unit) {
+@Composable private fun DeckScreen(route:DeckRoute,state:FlashState,model:FlashViewModel,onEdit:(String)->Unit,
+    onStudy:()->Unit,onOptions:()->Unit,onChat:()->Unit,onDeleted:()->Unit) {
+    var trash by rememberSaveable(route.id){mutableStateOf(false)}
+    var search by rememberSaveable(route.id){mutableStateOf("")}
     val deck=state.decks.find{it.id==route.id}
-    var tab by rememberSaveable(route.id){mutableStateOf(if(route.chat||deck==null)"Chat"else"Cards")}
-    var cardId by rememberSaveable(route.id){mutableStateOf<String?>(null)};var newCard by rememberSaveable(route.id){mutableStateOf(false)}
-    var search by rememberSaveable(route.id){mutableStateOf("")};var stars by rememberSaveable(route.id){mutableStateOf(false)}
-    var trash by rememberSaveable(route.id){mutableStateOf(false)};var deleteCardId by rememberSaveable{mutableStateOf<String?>(null)}
-    val cards=state.cards.filter{it.deckId==route.id}.sortedBy{it.order}
-    Column(Modifier.fillMaxSize()) {
-        Column(Modifier.padding(horizontal=20.dp,vertical=12.dp)){Heading(deck?.title?:"Create a deck with AI",deck?.description?:"Describe what you want to learn. Review changes before saving.")}
-        PrimaryTabRow(selectedTabIndex=listOf("Cards","Study","Chat").indexOf(tab)) {
-            listOf("Cards","Study","Chat").forEach{name->Tab(tab==name,{tab=name},text={Text(name)})}
-        }
-        if(tab=="Chat")Box(Modifier.weight(1f)){ChatScreen(route.id,state,model)}
-        else if(deck==null)Empty("No deck saved yet","Open Chat to create the deck, then approve the proposed changes.")
-        else if(deck.deletedAt!=null)Empty("This deck is in trash","Restore it from Settings to study or edit it.")
-        else if(tab=="Study")Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-            Text("Practice your way",style=MaterialTheme.typography.titleLarge)
-            Text("Choose cards, direction, and a study mode. English → Spanish and Spanish → English confidence are tracked separately.")
-            if(!deck.downloaded)Button({model.download(deck)},enabled=state.online&&!state.busy){Text("Download complete deck")}
-            Button(onStudy,enabled=deck.downloaded){Text("Set up a session")}
-            for(direction in listOf("term","definition")) {
-                Text(if(direction=="term")"Term first"else"Definition first",style=MaterialTheme.typography.titleMedium)
-                Text(listOf("struggling","known","unrated").joinToString(" · "){filter->"${cards.count{eligible(it,direction,filter,state.progress)}} $filter"})
-            }
-        } else LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({newCard=true},enabled=state.online&&!state.busy){Text("Add card")};TextButton({onEdit(deck.id)},enabled=state.online&&!state.busy){Text("Deck settings")};TextButton({onImport(deck.id)},enabled=state.online&&!state.busy){Text("Import")}}}
-            item{OutlinedTextField(search,{search=it},label={Text("Find a card")},modifier=Modifier.fillMaxWidth())}
-            item{Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)){FilterChip(stars,{stars=!stars},label={Text("Starred")});FilterChip(trash,{trash=!trash},label={Text("Trash")});TextButton({onExport(ImportExport.delimited(cards,'\t'),"${deck.title}.tsv")},enabled=deck.downloaded){Text("Export TSV")};TextButton({onExport(ImportExport.delimited(cards,','),"${deck.title}.csv")},enabled=deck.downloaded){Text("CSV")}}}
-            val shown=cards.filter{(it.deletedAt!=null)==trash&&(!stars||it.starred)&&(it.term.contains(search,true)||it.definition.contains(search,true))&&!it.purgeRequested}
-            if(shown.isEmpty())item{Empty("No cards here yet","Add cards manually, import a list, or ask AI in Chat.")}
-            items(shown,key={it.id}){card->Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment=Alignment.CenterVertically){Text(card.term,style=MaterialTheme.typography.titleMedium,modifier=Modifier.weight(1f));IconButton({model.saveCard(card.copy(starred=!card.starred))},enabled=state.online&&!state.busy&&!trash){Icon(if(card.starred)Icons.Default.Star else Icons.Default.StarBorder,if(card.starred)"Unstar card"else"Star card")}}
-                    Text(card.definition);if(card.example.isNotBlank())Text(card.example,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                        if(trash){TextButton({model.contentAction("cards",card.id,card.version,"restore")},enabled=state.online&&!state.busy){Text("Restore")};TextButton({deleteCardId=card.id}){Text("Delete permanently")}}
-                        else {TextButton({cardId=card.id},enabled=state.online&&!state.busy){Text("Edit")};TextButton({model.saveCard(card.copy(id=newId(),version=0,order=(cards.maxOfOrNull{it.order}?:0)+1000))},enabled=state.online&&!state.busy){Text("Copy")};IconButton({model.moveCard(card,-1)},enabled=state.online&&!state.busy){Icon(Icons.Default.KeyboardArrowUp,"Move card up")};IconButton({model.moveCard(card,1)},enabled=state.online&&!state.busy){Icon(Icons.Default.KeyboardArrowDown,"Move card down")};IconButton({deleteCardId=card.id}){Icon(Icons.Default.DeleteOutline,"Move card to trash")}}
+    var menu by remember{mutableStateOf(false)}
+    var deleteTarget by remember{mutableStateOf<FlashCard?>(null)}
+    var deleteDeck by remember{mutableStateOf(false)}
+    var editorJson by rememberSaveable(route.id){mutableStateOf<String?>(null)}
+    val editor=editorJson?.let{Codec.decodeFromString<FlashCard>(it)}
+    var error by remember(route.id){mutableStateOf("")}
+    var loading by remember(route.id){mutableStateOf(false)}
+    var retry by remember{mutableStateOf(0)}
+    LaunchedEffect(route.id,retry) {
+        loading=true
+        try {model.repository.prepareDeck(route.id)} catch(e:Exception){error=operationError(e)} finally{loading=false}
+    }
+    val cards=state.cards.filter{it.deckId==route.id&&(it.deletedAt!=null)==trash&&!it.purgeRequested&&(it.term.contains(search,true)||it.definition.contains(search,true))}.sortedBy{it.order}
+    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            if(deck!=null&&!deck.archived) Button(onStudy,enabled=cards.isNotEmpty()){Text(if(state.sessions.any{!it.finished&&(it.deckIds.ifEmpty{it.items.map{item->item.card.deckId}.distinct()})==listOf(route.id)})"Resume study"else"Study")}
+            OutlinedButton({editorJson=Codec.encodeToString(FlashCard.serializer(),FlashCard(deckId=route.id,order=(cards.maxOfOrNull{it.order}?:0)+1000))},enabled=deck!=null&&state.online){Text("Add card")}
+            Box {
+                IconButton({menu=true}){Icon(Icons.Default.MoreVert,"Deck options")}
+                DropdownMenu(menu,{menu=false}) {
+                    DropdownMenuItem(text={Text("Ask AI about this deck")},onClick={menu=false;onChat()})
+                    DropdownMenuItem(text={Text(if(trash)"Show active cards"else"Card trash")},onClick={menu=false;trash=!trash})
+                    DropdownMenuItem(text={Text("Study options")},onClick={menu=false;onOptions()})
+                    if(deck!=null) {
+                        DropdownMenuItem(text={Text("Edit deck")},onClick={menu=false;onEdit(deck.id)})
+                        DropdownMenuItem(text={Text(if(deck.archived)"Unarchive"else"Archive")},onClick={menu=false;model.saveDeck(deck.copy(archived=!deck.archived)) {}})
+                        DropdownMenuItem(text={Text("Move to trash")},onClick={menu=false;deleteDeck=true})
                     }
                 }
-            }}
-            item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){TextButton({model.duplicateDeck(deck)},enabled=state.online&&!state.busy&&deck.downloaded){Text("Duplicate deck")};TextButton({model.saveDeck(deck.copy(archived=!deck.archived)) {}},enabled=state.online&&!state.busy){Text(if(deck.archived)"Unarchive"else"Archive")};TextButton({deleteCardId="deck"},enabled=state.online&&!state.busy){Text("Trash deck")}}}
+            }
+        }}
+        item{OutlinedTextField(search,{search=it},label={Text("Find a card")},modifier=Modifier.fillMaxWidth(),singleLine=true)}
+        if(loading&&cards.isEmpty())item{CircularProgressIndicator()}
+        if(error.isNotBlank())item{Text(error);TextButton({error="";retry++}){Text("Retry")}}
+        if(!loading&&cards.isEmpty()&&error.isBlank())item{Empty("Add your first card","Build this deck one card at a time.")}
+        items(cards,key={it.id}){card->
+            var cardMenu by remember{mutableStateOf(false)}
+            ListItem(headlineContent={Text(card.term)},supportingContent={Text(card.definition)},trailingContent={Box {
+                IconButton({cardMenu=true}){Icon(Icons.Default.MoreVert,"Card options")}
+                DropdownMenu(cardMenu,{cardMenu=false}) {
+                    if(trash)DropdownMenuItem(text={Text("Restore")},onClick={cardMenu=false;model.contentAction("cards",card.id,card.version,"restore")})
+                    else DropdownMenuItem(text={Text("Edit")},onClick={cardMenu=false;editorJson=Codec.encodeToString(FlashCard.serializer(),card)})
+                    DropdownMenuItem(text={Text(if(card.starred)"Unstar"else"Star")},onClick={cardMenu=false;model.saveCard(card.copy(starred=!card.starred))})
+                    DropdownMenuItem(text={Text("Move to trash")},onClick={cardMenu=false;deleteTarget=card})
+                }
+            }})
+            HorizontalDivider()
         }
     }
-    if(newCard||cardId!=null)CardEditor(cards.find{it.id==cardId}?:FlashCard(deckId=route.id,order=(cards.maxOfOrNull{it.order}?:0)+1000),state.busy,
-        onDismiss={newCard=false;cardId=null},onSave={card->model.saveCard(card){newCard=false;cardId=null}})
-    deleteCardId?.let{id->ConfirmDialog(if(trash)"Permanently delete this card?"else"Move to trash?","Deleted content can be restored for 30 days unless permanently deleted.",onDismiss={deleteCardId=null}){
-        if(id=="deck"&&deck!=null)model.contentAction("decks",deck.id,deck.version,"trash")
-        else cards.find{it.id==id}?.let{model.contentAction("cards",it.id,it.version,if(trash)"purge"else"trash")};deleteCardId=null
-    }}
+    if(deleteDeck&&deck!=null)ConfirmDialog("Move deck to trash?","You can restore this deck from Settings.",{deleteDeck=false}){deleteDeck=false;model.contentAction("decks",deck.id,deck.version,"trash",onDeleted)}
+    deleteTarget?.let{card->ConfirmDialog("Move card to trash?","You can restore this card from Card trash.",{deleteTarget=null}){deleteTarget=null;model.contentAction("cards",card.id,card.version,"trash")}}
+    editor?.let{draft->CardEditor(draft,state.busy,onDismiss={editorJson=null},onSave={model.saveCard(it){editorJson=null}})}
 }
-@Composable private fun ChatScreen(deckId:String,state:FlashState,model:FlashViewModel) {
+@Composable private fun ChatScreen(deckId:String,state:FlashState,model:FlashViewModel,onDeleted:()->Unit,onResumeDraft:(String)->Unit,onCreated:()->Unit) {
     val conversationIds=(state.conversations.filter{it.deckId==deckId}.sortedByDescending{it.updatedAt}.map{it.id}+
         state.chatRequests.filter{it.deckId==deckId}.sortedByDescending{it.createdAt}.map{it.conversationId}).distinct()
     var selectedConversation by rememberSaveable(deckId){mutableStateOf<String?>(null)}
@@ -246,18 +250,19 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
     val active=conversation in state.activeChats
     val unresolved=requests.lastOrNull{it.state in listOf("pending","uncertain")}
     val listState=androidx.compose.foundation.lazy.rememberLazyListState()
-    LaunchedEffect(conversation,state.turns.size,requests,active){if(listState.layoutInfo.totalItemsCount>0)listState.animateScrollToItem(listState.layoutInfo.totalItemsCount-1)}
-    var draft by rememberSaveable(deckId,conversation){mutableStateOf("")};var details by rememberSaveable{mutableStateOf(false)}
+    LaunchedEffect(conversation,state.turns.size,requests,active){if(listState.layoutInfo.totalItemsCount>0&&!listState.canScrollForward)listState.animateScrollToItem(listState.layoutInfo.totalItemsCount-1)}
+    var draft by rememberSaveable(deckId,conversation){mutableStateOf("")};var details by rememberSaveable{mutableStateOf<String?>(null)}
     var deleting by rememberSaveable{mutableStateOf(false)}
     Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)) {
+        if(state.decks.none{it.id==deckId})state.chatRequests.filter{r->r.deckId!=deckId&&state.decks.none{it.id==r.deckId}}.distinctBy{it.deckId}.take(3).forEach{request->TextButton({onResumeDraft(request.deckId)}){Text("Resume draft: ${request.message.take(45)}")}}
+        if(conversationIds.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)) {
             TextButton({selectedConversation="${deckId}_${newId()}"},enabled=!active){Text("New conversation")}
             conversationIds.forEachIndexed{index,cid->FilterChip(conversation==cid,{selectedConversation=cid},label={Text("Chat ${index+1}")})}
             TextButton({deleting=true},enabled=!active){Text("Delete chat")}
         }
         LazyColumn(Modifier.weight(1f),state=listState,contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             val turns=state.turns.filter{it.conversationId==conversation}.sortedBy{it.createdAt}
-            if(turns.isEmpty()&&requests.isEmpty())item{Empty("Build understanding","Try “Create 30 travel phrases with natural Spanish examples” or “Explain when these words use estar.” Changes wait for your approval.")}
+            if(turns.isEmpty()&&requests.isEmpty())item{Empty("What would you like to learn?","Describe a topic or paste your notes.")}
             items(turns,key={it.id}){turn->
                 Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
                     Surface(color=MaterialTheme.colorScheme.primaryContainer,shape=MaterialTheme.shapes.medium){Text(turn.user,Modifier.padding(14.dp))}
@@ -270,10 +275,10 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
                     if(proposal!=null)OutlinedCard(Modifier.fillMaxWidth()) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                         Text("${proposal.operations.size} proposed changes",style=MaterialTheme.typography.titleMedium)
                         Text(proposal.operations.groupingBy{it.kind.replace('_',' ')}.eachCount().entries.joinToString(" · "){"${it.value} ${it.key}"})
-                        TextButton({details=!details}){Text(if(details)"Hide before/after"else"Review before/after")}
-                        if(details)proposal.operations.forEach{o->Text(o.kind.replace('_',' '),fontWeight=FontWeight.SemiBold);o.before?.let{Text("Before: $it",style=MaterialTheme.typography.bodySmall)};Text("After: ${o.after?:"Move to trash"}",style=MaterialTheme.typography.bodySmall)}
+                        TextButton({details=if(details==proposal.id)null else proposal.id}){Text(if(details==proposal.id)"Hide changes"else"Review before/after")}
+                        if(details==proposal.id)proposal.operations.forEach{o->Text(o.kind.replace('_',' '),fontWeight=FontWeight.SemiBold);o.before?.let{before->Text(before.entries.filter{it.key in listOf("title","term","definition")}.joinToString("\n"){it.value.toString().trim('"')},style=MaterialTheme.typography.bodySmall)};Text(o.after?.entries?.filter{it.key in listOf("title","term","definition","example","explanation")}?.joinToString("\n"){it.value.toString().trim('"')} ?: "Move to trash",style=MaterialTheme.typography.bodySmall)}
                         if(proposal.state=="pending"&&proposal.expiresAt>System.currentTimeMillis())Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            Button({model.confirm(proposal,true)},enabled=state.online&&!state.busy){Text("Approve request")}
+                            Button({model.confirm(proposal,true) { if(proposal.operations.any{it.kind=="create_deck"})onCreated();if(proposal.operations.any{it.kind=="delete_deck"})onDeleted() }},enabled=state.online&&!state.busy){Text(if(proposal.operations.any{it.kind=="create_deck"})"Create deck"else"Apply changes")}
                             OutlinedButton({model.confirm(proposal,false)},enabled=state.online&&!state.busy){Text("Reject")}
                         }else Text(if(proposal.state=="pending")"Expired — ask for a fresh preview"else proposal.state.replaceFirstChar{it.uppercase()})
                     }}
@@ -286,14 +291,14 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
                     else if(request.state=="failed")Text("Request failed. Your deck was not changed.",color=MaterialTheme.colorScheme.error)
                     else Text("The response has not been confirmed. Check status to recover it.")
                     if(request.error.isNotBlank())Text(request.error,color=MaterialTheme.colorScheme.error)
-                    Text("Request: ${request.id}",style=MaterialTheme.typography.bodySmall)
+
                     if(!active&&request.state!="failed")OutlinedButton({model.recoverChat(request)},enabled=state.online){Text("Check status / retry safely")}
                     if(!active&&request.state=="failed")TextButton({draft=request.message}){Text("Use message again")}
                 }
             }
         }
         Row(Modifier.padding(12.dp),verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(draft,{draft=it},label={Text("Ask about this deck")},modifier=Modifier.weight(1f),maxLines=5,enabled=!active,isError=draft.length>8000)
+            OutlinedTextField(draft,{draft=it},label={Text(if(state.decks.any{it.id==deckId})"Ask about this deck…"else"Describe your deck…")},modifier=Modifier.weight(1f),maxLines=5,enabled=!active,isError=draft.length>8000)
             Button({selectedConversation=conversation;model.sendMessage(deckId,conversation,draft);draft=""},enabled=state.online&&!active&&unresolved==null&&draft.isNotBlank()&&draft.length<=8000){Text(if(active)"Sending…"else"Send")}
         }
     }
@@ -309,7 +314,7 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
     val sessionSaving=session.id in state.savingSessions
     var answer by rememberSaveable(session.id,session.cursor){mutableStateOf("")}
     Column(Modifier.fillMaxSize().imePadding().padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment=Alignment.CenterVertically){IconButton(onExit){Icon(Icons.Default.Close,"Pause and exit session")};Text(session.title,modifier=Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);TextButton(onExit){Text("Save & exit")}}
+        Row(verticalAlignment=Alignment.CenterVertically){IconButton(onExit){Icon(Icons.Default.Close,"Pause and exit session")};Text(session.title,modifier=Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);}
         if(session.syncConflict)Text("This session is saved on this device. Another device changed its cloud copy.",color=MaterialTheme.colorScheme.error)
         state.studyErrors[session.id]?.let{Text(it,color=MaterialTheme.colorScheme.error)}
         Box(Modifier.fillMaxWidth().height(4.dp)){if(sessionSaving)LinearProgressIndicator(Modifier.fillMaxWidth())}
@@ -317,7 +322,8 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
         if(session.finished||session.submitted) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 Heading("Session complete",if(session.mode=="practice")"Every selected card reached High. Come back whenever you’re ready."else"Review your answers below.")
-                if(session.mode=="practice")Text("${session.completed.size} directional cards completed")
+                if(session.mode=="browse")Text("${session.items.size} cards reviewed")
+                else if(session.mode=="practice")Text("${session.completed.size} directional cards completed")
                 else {
                     val graded=session.grades.values.mapNotNull{it.points};val pending=session.grades.values.count{it.points==null}
                     Text("${"%.1f".format(graded.sum())} / ${session.items.size} points${if(pending>0)" · $pending awaiting grading or review"else""}",style=MaterialTheme.typography.titleLarge)
@@ -344,14 +350,15 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
                 },label="Next card"){shown->key(shown.key){FlashCardFace(shown,if(shown.key==item.key)session.revealed else false,onFlip={if(!sessionSaving)model.reveal(session)},onSpeak=onSpeak,onSwipe={right->
                     if(!sessionSaving){if(session.mode=="browse")model.advance(session,if(right)-1 else 1)else if(session.revealed)model.rate(session,if(right)"high"else"low")}
                 },enabled=shown.key==item.key&&!sessionSaving)}}
-                if(session.mode=="practice") {
+                if(session.mode=="practice"&&!session.revealed)Button({model.reveal(session)},enabled=!sessionSaving,modifier=Modifier.fillMaxWidth()){Text("Show answer")}
+                if(session.mode=="practice"&&session.revealed) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         listOf("low" to "↻ Low","medium" to "≈ Medium","high" to "✓ High").forEach{(value,label)->
                             FilledTonalButton({model.rate(session,value)},enabled=session.revealed&&!sessionSaving,modifier=Modifier.weight(1f).heightIn(min=52.dp),contentPadding=PaddingValues(8.dp)){Text(label)}
                         }
                     }
                     TextButton({model.undo(session)},enabled=session.undoJson!=null&&!sessionSaving){Text("Undo last rating")}
-                }else Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){OutlinedButton({model.advance(session,-1)},enabled=session.cursor>0&&!sessionSaving){Text("Previous")};OutlinedButton({model.advance(session,1)},enabled=session.cursor<session.items.lastIndex&&!sessionSaving){Text("Next")}}
+                }else Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){OutlinedButton({model.advance(session,-1)},enabled=session.cursor>0&&!sessionSaving){Text("Previous")};OutlinedButton({model.advance(session,1)},enabled=!sessionSaving){Text(if(session.cursor==session.items.lastIndex)"Finish"else"Next")}}
             }else {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                     Text(item.prompt,style=MaterialTheme.typography.headlineMedium)
@@ -398,7 +405,7 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
 }
 @Composable private fun GradeFeedback(grade:Grade?,onOverride:(String)->Unit) {
     if(grade==null)return
-    Text(when(grade.verdict){"pending"->"Awaiting AI grading — reconnect or check budget";"needs_review"->"Needs your review";else->grade.verdict.replace('_',' ').replaceFirstChar{it.uppercase()}},style=MaterialTheme.typography.titleSmall)
+    Text(when(grade.verdict){"pending"->"Awaiting grade";"needs_review"->"Needs your review";else->grade.verdict.replace('_',' ').replaceFirstChar{it.uppercase()}},style=MaterialTheme.typography.titleSmall)
     if(grade.explanation.isNotBlank())Text(grade.explanation)
     Row(Modifier.horizontalScroll(rememberScrollState())){listOf("correct","partial","incorrect").forEach{verdict->TextButton({onOverride(verdict)}){Text("Mark $verdict")}}}
 }
@@ -411,48 +418,37 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
         Choice("First side",listOf("term","definition","both"),direction,{direction=it})
         Choice("Mode",listOf("browse","practice","typed","multiple","test"),mode,{mode=it})
         Row(verticalAlignment=Alignment.CenterVertically){Switch(shuffle,{shuffle=it});Text("Shuffle cards")}
-        if(mode in listOf("test","typed","multiple"))Field("Questions (1–100)",count,{count=it})
+        Field("Cards (1–100)",count,{count=it})
         Text("One High rating completes a card in this session. Low and Medium return later.")
         Button({onStart(filter,direction,shuffle,mode,count.toIntOrNull()?.coerceIn(1,100)?:20)},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text("Start session")}
     }
 }
 @Composable private fun DeckEditor(original:Deck?,busy:Boolean,onDismiss:()->Unit,onSave:(Deck)->Unit) {
-    val base=remember(original?.id){original?:Deck()}
+    val draftId=rememberSaveable{newId()}
+    val base=remember(original?.id){original?:Deck(id=draftId)}
     var title by rememberSaveable{mutableStateOf(base.title)};var description by rememberSaveable{mutableStateOf(base.description)}
     var term by rememberSaveable{mutableStateOf(base.termLanguage)};var definition by rememberSaveable{mutableStateOf(base.definitionLanguage)}
     var variety by rememberSaveable{mutableStateOf(base.spanishVariety)}
-    FormDialog(if(original==null)"New deck"else"Edit deck",onDismiss) {
+    FormDialog(if(original==null)"New deck"else"Edit deck",onDismiss,dirty=title!=base.title||description!=base.description||term!=base.termLanguage||definition!=base.definitionLanguage) {
         Field("Title",title,{title=it});Field("Description",description,{description=it},false)
-        Field("Term language",term,{term=it});Field("Definition language",definition,{definition=it})
-        Choice("Spanish variety",listOf("es-419","es-MX","es-ES"),variety,{variety=it})
-        Button({onSave(base.copy(title=title,description=description,termLanguage=term,definitionLanguage=definition,spanishVariety=variety))},enabled=title.isNotBlank()&&term.isNotBlank()&&definition.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth()){Text("Save deck")}
+        var more by rememberSaveable{mutableStateOf(false)}
+        TextButton({more=!more}){Text("Language options")}
+        if(more){Field("Term language",term,{term=it});Field("Definition language",definition,{definition=it})
+        Choice("Spanish variety",listOf("es-419","es-MX","es-ES"),variety,{variety=it})}
+        Button({onSave(base.copy(title=title,description=description,termLanguage=term,definitionLanguage=definition,spanishVariety=variety))},enabled=title.isNotBlank()&&title.length<=200&&description.length<=2000&&term.isNotBlank()&&definition.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth()){Text("Save deck")}
     }
 }
 @Composable private fun CardEditor(base:FlashCard,busy:Boolean,onDismiss:()->Unit,onSave:(FlashCard)->Unit) {
     var term by rememberSaveable{mutableStateOf(base.term)};var definition by rememberSaveable{mutableStateOf(base.definition)}
     var example by rememberSaveable{mutableStateOf(base.example)};var explanation by rememberSaveable{mutableStateOf(base.explanation)}
     var termAlt by rememberSaveable{mutableStateOf(base.termAlternatives.joinToString("\n"))};var definitionAlt by rememberSaveable{mutableStateOf(base.definitionAlternatives.joinToString("\n"))}
-    FormDialog(if(base.version==0)"New card"else"Edit card",onDismiss) {
-        Field("Term",term,{term=it},false);Field("Definition",definition,{definition=it},false)
-        Field("Example sentence",example,{example=it},false);Field("Explanation",explanation,{explanation=it},false)
-        Field("Alternative terms (one per line)",termAlt,{termAlt=it},false);Field("Alternative definitions (one per line)",definitionAlt,{definitionAlt=it},false)
-        Button({onSave(base.copy(term=term,definition=definition,example=example,explanation=explanation,termAlternatives=termAlt.lines().filter{it.isNotBlank()},definitionAlternatives=definitionAlt.lines().filter{it.isNotBlank()}))},enabled=term.isNotBlank()&&definition.isNotBlank()&&!busy,modifier=Modifier.fillMaxWidth()){Text("Save card")}
-    }
-}
-@Composable private fun ImportDialog(deck:Deck,state:FlashState,model:FlashViewModel,onOpenFile:()->Unit,onDismiss:()->Unit) {
-    var source by rememberSaveable{mutableStateOf("")};var delimiter by rememberSaveable{mutableStateOf("Tab")};var preview by rememberSaveable{mutableStateOf(false)}
-    LaunchedEffect(state.importText){if(state.importText.isNotEmpty()){source=state.importText;model.imported("");preview=false}}
-    val parsed=remember(source,delimiter,preview,state.cards){if(preview)runCatching{ImportExport.parse(source,deck.id,state.cards.filter{it.deckId==deck.id},if(delimiter=="Tab")'\t'else',')}else null}
-    FormDialog("Import into ${deck.title}",onDismiss) {
-        Text("Paste term/definition rows or select a UTF-8 CSV/TSV file. Duplicate rows are skipped.")
-        TextButton(onOpenFile){Text("Open file")};Choice("Separator",listOf("Tab","Comma"),delimiter,{delimiter=it;preview=false})
-        Field("Content",source,{source=it;preview=false},false)
-        OutlinedButton({preview=true},enabled=source.isNotBlank()){Text("Preview import")}
-        parsed?.onFailure{Text(it.message?:"Invalid file",color=MaterialTheme.colorScheme.error)}?.getOrNull()?.let{rows->
-            Text("${rows.count{it.card!=null&&!it.duplicate}} cards · ${rows.count{it.duplicate}} duplicates · ${rows.count{it.error!=null}} errors")
-            rows.take(100).forEach{row->Text("${row.number}: ${row.error?:if(row.duplicate)"Duplicate — skipped"else"${row.card?.term} → ${row.card?.definition}"}",style=MaterialTheme.typography.bodySmall)}
-            Button({model.import(deck,rows.filter{!it.duplicate}.mapNotNull{it.card},onDismiss)},enabled=!state.busy&&rows.none{it.error!=null}&&rows.any{it.card!=null&&!it.duplicate}){Text("Confirm import")}
-        }
+    FormDialog(if(base.version==0)"New card"else"Edit card",onDismiss,dirty=term!=base.term||definition!=base.definition||example!=base.example||explanation!=base.explanation||termAlt!=base.termAlternatives.joinToString("\n")||definitionAlt!=base.definitionAlternatives.joinToString("\n")) {
+        Field("Front",term,{term=it},false);Field("Back",definition,{definition=it},false)
+        var more by rememberSaveable{mutableStateOf(false)}
+        TextButton({more=!more}){Text("More options")}
+        if(more){Field("Example sentence",example,{example=it},false);Field("Explanation",explanation,{explanation=it},false)
+        Field("Alternative terms (one per line)",termAlt,{termAlt=it},false);Field("Alternative definitions (one per line)",definitionAlt,{definitionAlt=it},false)}
+        Button({onSave(base.copy(term=term,definition=definition,example=example,explanation=explanation,termAlternatives=termAlt.lines().filter{it.isNotBlank()},definitionAlternatives=definitionAlt.lines().filter{it.isNotBlank()}))},enabled=term.isNotBlank()&&term.length<=2000&&definition.isNotBlank()&&definition.length<=4000&&example.length<=2000&&explanation.length<=4000&&listOf(termAlt,definitionAlt).all{value->value.lines().filter{it.isNotBlank()}.let{it.size<=20&&it.all{line->line.length<=1000}}}&&!busy,modifier=Modifier.fillMaxWidth()){Text("Save card")}
     }
 }
 @Composable private fun RemindersScreen(state:FlashState,model:FlashViewModel,onNotifications:()->Unit) {
@@ -499,44 +495,38 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
         }.onFailure{error=it.message?:"Check the schedule"}},enabled=title.isNotBlank()&&!state.busy){Text("Save reminder")}
     }
 }
-@Composable private fun SettingsScreen(state:FlashState,model:FlashViewModel,onExport:(String,String)->Unit,onOpenFile:()->Unit,onVoices:()->List<Pair<String,String>>) {
+@Composable private fun SettingsScreen(state:FlashState,model:FlashViewModel,onVoices:()->List<Pair<String,String>>) {
     var delete by rememberSaveable{mutableStateOf(false)};var confirmation by rememberSaveable{mutableStateOf("")}
-    var restore by rememberSaveable{mutableStateOf(false)};var trash by rememberSaveable{mutableStateOf(false)}
+    var trash by rememberSaveable{mutableStateOf(false)}
     var purgeId by rememberSaveable{mutableStateOf<String?>(null)};var voices by remember{mutableStateOf(emptyList<Pair<String,String>>())}
-    var backupText by rememberSaveable{mutableStateOf("")}
-    LaunchedEffect(state.importText){if(state.importText.isNotBlank()){backupText=state.importText;restore=true;model.imported("")}}
+
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         item{Heading("Settings",state.email)}
         item{Choice("Appearance",listOf("system","light","dark"),state.theme,model::theme)}
         item{Text("Pronunciation",style=MaterialTheme.typography.titleLarge);Text("Playback speed: ${"%.2f".format(state.rate)}×");Slider(state.rate,{model.speech(it,state.voice)},valueRange=.5f..1.3f);TextButton({voices=onVoices()}){Text("Load available voices")}}
         if(voices.isNotEmpty())item{Column{TextButton({model.speech(state.rate,null)}){Text("Use language default")};voices.forEach{(name,label)->TextButton({model.speech(state.rate,name)}){Text("${if(state.voice==name)"✓ "else""}$label")}}}}
-        item{HorizontalDivider();Text("AI budget",style=MaterialTheme.typography.titleLarge);Text("${state.usage.month.ifBlank{"This month"}} · $${"%.2f".format((state.usage.spent+state.usage.reserved)/1_000_000.0)} / $${"%.2f".format(state.usage.cap/1_000_000.0)}");Text("Includes pending reservations. Resets monthly in America/Chicago. Firebase billing is separate.",style=MaterialTheme.typography.bodySmall);if(state.usage.warning)Text("80% of your AI budget is reserved or spent.",color=MaterialTheme.colorScheme.error);TextButton(model::refresh,enabled=state.online&&!state.busy){Text("Retry pending grades & sync")}}
-        item{HorizontalDivider();Text("Backups",style=MaterialTheme.typography.titleLarge);Button({model.exportBackup{text->onExport(text,"flashcards-backup.json")}},enabled=state.online&&!state.busy){Text("Export complete JSON backup")};TextButton(onOpenFile,enabled=state.online&&!state.busy){Text("Open backup to restore")}}
-        item{Text("Downloaded decks",style=MaterialTheme.typography.titleLarge)}
-        items(state.decks.filter{it.downloaded},key={"download_${it.id}"}){d->Row(verticalAlignment=Alignment.CenterVertically){Text(d.title,Modifier.weight(1f));TextButton({model.removeDownload(d)}){Text("Remove download")}}}
         item{TextButton({trash=!trash}){Text(if(trash)"Hide trash"else"Show trash")}}
         if(trash) {
             items(state.decks.filter{it.deletedAt!=null&&!it.purgeRequested},key={"trash_${it.id}"}){d->Column{Text(d.title);Row{TextButton({model.contentAction("decks",d.id,d.version,"restore")},enabled=state.online&&!state.busy){Text("Restore")};TextButton({purgeId=d.id},enabled=state.online&&!state.busy){Text("Delete permanently")}}}}
         }
         item{HorizontalDivider();OutlinedButton({model.signOut()},enabled=!state.busy){Text("Sign out")};TextButton({delete=true},enabled=state.online&&!state.busy){Text("Delete account and all data")}}
     }
-    if(restore)FormDialog("Restore backup",{restore=false}) {
-        val parsed=remember(backupText){runCatching{ImportExport.backup(backupText)}}
-        parsed.getOrNull()?.let{backup->Text(backup.collections.entries.joinToString("\n"){"${it.key}: ${it.value.size}"});Text("Restore creates new records and preserves your existing decks. Restored reminders are disabled until you review their schedules.");Button({model.restoreBackup(backupText){restore=false;backupText=""}},enabled=!state.busy){Text("Confirm restore")}}
-        parsed.exceptionOrNull()?.let{Text(it.message?:"Invalid backup",color=MaterialTheme.colorScheme.error)}
-    }
-    if(delete)FormDialog("Delete your account",{delete=false}){Text("Access is revoked immediately. Your cloud data will be removed by the cleanup job. Export a backup first if needed.");Field("Type DELETE",confirmation,{confirmation=it});Button({model.signOut(true);delete=false},enabled=confirmation=="DELETE"&&!state.busy){Text("Permanently delete account")}}
+    if(delete)FormDialog("Delete your account",{delete=false}){Text("This permanently removes your account and saved learning data.");Field("Type DELETE",confirmation,{confirmation=it});Button({model.signOut(true);delete=false},enabled=confirmation=="DELETE"&&!state.busy){Text("Permanently delete account")}}
     purgeId?.let{id->ConfirmDialog("Permanently delete deck?","The deck and its content will be removed by cleanup. This cannot be undone.",{purgeId=null}){state.decks.find{it.id==id}?.let{model.contentAction("decks",it.id,it.version,"purge")};purgeId=null}}
 }
 @Composable private fun Choice(label:String,options:List<String>,selected:String,onSelect:(String)->Unit) {
     Column(verticalArrangement=Arrangement.spacedBy(4.dp)){Text(label,style=MaterialTheme.typography.labelLarge);Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){options.forEach{value->FilterChip(value==selected,{onSelect(value)},label={Text(value.replaceFirstChar{it.uppercase()})})}}}
 }
 @Composable private fun Field(label:String,value:String,onValue:(String)->Unit,single:Boolean=true) {
-    OutlinedTextField(value,onValue,label={Text(label)},singleLine=single,minLines=if(single)1 else 2,maxLines=if(single)1 else 6,modifier=Modifier.fillMaxWidth())
+    val limit=when(label){"Title"->200;"Description"->2000;"Front"->2000;"Back","Explanation"->4000;"Example sentence"->2000;else->Int.MAX_VALUE}
+    OutlinedTextField(value,onValue,label={Text(label)},isError=value.length>limit,supportingText={if(value.length>limit)Text("Use $limit characters or fewer")},singleLine=single,minLines=if(single)1 else 2,maxLines=if(single)1 else 6,modifier=Modifier.fillMaxWidth())
 }
-@Composable private fun FormDialog(title:String,onDismiss:()->Unit,content:@Composable ColumnScope.()->Unit) {
-    Dialog(onDismissRequest=onDismiss){Surface(shape=MaterialTheme.shapes.large){Column(Modifier.fillMaxWidth().heightIn(max=680.dp).imePadding().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
-        Row(verticalAlignment=Alignment.CenterVertically){Text(title,style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f));IconButton(onDismiss){Icon(Icons.Default.Close,"Close dialog")}}
+@Composable private fun FormDialog(title:String,onDismiss:()->Unit,dirty:Boolean=false,content:@Composable ColumnScope.()->Unit) {
+    var discard by remember{mutableStateOf(false)}
+    val close={if(dirty)discard=true else onDismiss()}
+    if(discard)ConfirmDialog("Discard changes?","Your unsaved changes will be lost.",{discard=false}){discard=false;onDismiss()}
+    Dialog(onDismissRequest=close,properties=DialogProperties(usePlatformDefaultWidth=false)){Surface(shape=MaterialTheme.shapes.large){Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+        Row(verticalAlignment=Alignment.CenterVertically){Text(title,style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f));IconButton(close){Icon(Icons.Default.Close,"Close dialog")}}
         content()
     }}}
 }

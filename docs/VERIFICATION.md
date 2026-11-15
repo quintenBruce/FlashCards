@@ -96,3 +96,24 @@ Record phone model, Android version, app commit/build, timezone and result.
 
 Successful build/tests plus recorded owner sign-in, offline resume, an approved
 AI batch, real device reminder delivery, and bilingual evaluation results.
+
+## UI implementation verification — November 15, 2026
+
+Implemented the searchable deck library, two-choice creation sheet, standalone AI chat, deck card menus, automatic content preparation, direct study/resume, archived decks and secondary navigation. Removed visible download management, budget, import/export and backend controls. Added card-trash recovery, optional card fields, readable proposal fields and full-height editors.
+
+Repaired stranded chat requests with existing turns, proposal outcome reconciliation, successful AI-deletion navigation, stable mutation IDs, new-card draft identity, network-held rating locks, ambiguous undo compensation, latest-local-session conflict handling, clean remote-session refresh, partial deck-refresh failures, pending-grade worker retries and account-scoped offline data retention at sign-out. Added deck scope and bounded session selection with matching source regression cases.
+
+Validation performed
+- Kotlin compilation succeeded after correcting initial syntax errors.
+- Two integrated assembleDebug runs succeeded. Final integration took 11 seconds with incremental tasks.
+- Added source regression cases for session subsets/deck scope and archived-deck exclusion. Tests were not executed.
+- No app launch, emulator run, screenshot rendering, live AI request or deployment occurred.
+- Existing deprecation and unchecked-cast compiler warnings remain.
+- Final Kotlin compilation passed after adding dirty-form dismissal protection and field messages. The APK predates those final form refinements.
+
+Remaining work from the design/audit
+- Device verification of keyboard, TalkBack, large text, dark-system-bar contrast and complete destination previews.
+- Dirty-form dismissal protection and text-length field messages are implemented. Full focus restoration and language/list validation messages need device review.
+- Per-screen Room subscriptions, durable conflict-resolution UI and a complete lifecycle/concurrency regression suite.
+- Oversized session growth after grading, atomic reordering, and full draft naming/history polish.
+- Study currently defaults to 20 cards and allows up to 100 per session, including practice and browse. This bounds snapshot size and can be adjusted through Study options.

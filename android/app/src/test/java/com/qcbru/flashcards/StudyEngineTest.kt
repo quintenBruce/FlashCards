@@ -46,4 +46,13 @@ class StudyEngineTest {
         val overlap=Schedule(timeZone="America/Chicago",hour=1,minute=30)
         assertEquals(Instant.parse("2026-11-02T07:30:00Z").toEpochMilli(),ReminderClock.next(overlap,Instant.parse("2026-11-01T06:31:00Z").toEpochMilli()))
     }
-}
+    @Test fun practiceSubsetKeepsDeckScopeForResume() {
+        val cards=(1..120).map{card.copy(id="card_$it",order=it.toLong())}
+        val session=StudyEngine.create(listOf(deck),cards,emptyList(),"all","term",false,"practice",20)
+        assertEquals(20,session.items.size)
+        assertEquals(listOf("deck"),session.deckIds)
+    }
+    @Test fun archivedDecksCannotProduceStudyItems() {
+        val session=StudyEngine.create(listOf(deck.copy(archived=true)),listOf(card),emptyList(),"all","term",false,"practice",20)
+        assertTrue(session.items.isEmpty())
+    }}

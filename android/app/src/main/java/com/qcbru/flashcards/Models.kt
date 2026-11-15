@@ -40,7 +40,7 @@ fun newId(): String = UUID.randomUUID().toString()
     val points get(): Double? = when (verdict) { "correct" -> 1.0; "partial" -> .5; "incorrect" -> 0.0; else -> null }
 }
 @Serializable data class StudySession(
-    val id: String = newId(), val title: String = "Practice", val mode: String = "practice", val items: List<StudyItem> = emptyList(),
+    val deckIds: List<String> = emptyList(), val id: String = newId(), val title: String = "Practice", val mode: String = "practice", val items: List<StudyItem> = emptyList(),
     val queue: List<String> = emptyList(), val completed: List<String> = emptyList(), val grades: Map<String, Grade> = emptyMap(),
     val cursor: Int = 0, val revealed: Boolean = false, val submitted: Boolean = false, val finished: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(), val updatedAt: Long = System.currentTimeMillis(),
@@ -99,7 +99,7 @@ object StudyEngine {
                 StudyItem("${card.id}_$dir", card, dir, deck.termLanguage, deck.definitionLanguage, deck.spanishVariety)
             }
         }.let { if (shuffle) it.shuffled() else it }
-        val selected = if (mode in listOf("test", "typed", "multiple")) pool.take(count.coerceIn(1,100)) else pool
+        val selected = pool.take(count.coerceIn(1,100))
         val items = selected.mapIndexed { index, item ->
             if (mode != "multiple" && !(mode == "test" && index % 2 == 0)) item
             else {
@@ -110,7 +110,7 @@ object StudyEngine {
                 item.copy(choices = if (distractors.size == 3) (distractors + item.answer).shuffled() else emptyList())
             }
         }
-        return StudySession(title = if (active.size == 1) active.values.first().title else "Combined review", mode = mode,
+        return StudySession(deckIds=active.keys.toList(), title = if (active.size == 1) active.values.first().title else "Combined review", mode = mode,
             items = items, queue = items.map { it.key }, finished = items.isEmpty())
     }
     fun rated(session: StudySession, confidence: String): StudySession {

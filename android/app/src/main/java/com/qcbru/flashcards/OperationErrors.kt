@@ -17,14 +17,14 @@ fun operationError(error: Throwable): String {
     if (error is IOException) return "The connection failed. Check your internet connection and the request status."
     if (error !is FirebaseFunctionsException) return when (error) {
         is IllegalArgumentException, is IllegalStateException -> error.message ?: "The request could not be completed."
-        else -> "The operation could not be completed. Check the diagnostic logs."
+        else -> "The operation could not be completed. Please try again."
     }
     val message = when (error.code) {
-        FirebaseFunctionsException.Code.UNAUTHENTICATED -> "Authentication or App Check failed. Sign in again and verify this device's App Check debug token."
-        FirebaseFunctionsException.Code.PERMISSION_DENIED -> error.message ?: "Access was denied. Check the account and backend permissions."
+        FirebaseFunctionsException.Code.UNAUTHENTICATED -> "Sign in again to continue."
+        FirebaseFunctionsException.Code.PERMISSION_DENIED -> "This account cannot complete that action."
         FirebaseFunctionsException.Code.DEADLINE_EXCEEDED -> "The server took too long to reply. Check request status before sending again."
         FirebaseFunctionsException.Code.UNAVAILABLE -> "The server is temporarily unreachable. Check request status before sending again."
-        FirebaseFunctionsException.Code.INTERNAL -> "The server could not finish the request. Check the request reference in server logs."
+        FirebaseFunctionsException.Code.INTERNAL -> "The request could not be completed. Please try again."
         else -> error.message ?: "The request failed (${error.code.name})."
     }
     val reference = (error.details as? Map<*, *>)?.get("operationId") as? String

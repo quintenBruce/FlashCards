@@ -22,3 +22,14 @@ import androidx.compose.ui.unit.dp
 }
 private fun sample()=StudyItem("example_term",FlashCard(term="I miss you",definition="Te extraño",
     example="Te extraño mucho. ¿Cuándo vuelves?",explanation="Common in Latin America. “Te echo de menos” is also correct."),"term","en-US","es-419","es-419")
+
+@Preview(name="Library",widthDp=360,heightDp=640,showBackground=true)
+@Preview(name="Library large text",widthDp=360,heightDp=640,fontScale=2f,showBackground=true)
+@Composable private fun LibraryPreview() {
+    FlashTheme("light") {
+        DecksScreen(FlashState(decks=listOf(
+            Deck(id="travel",title="Travel Spanish",downloaded=true),
+            Deck(id="class",title="Words from this week's class",downloaded=true)
+        )),onDeck={})
+    }
+}
