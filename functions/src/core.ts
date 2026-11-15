@@ -4,6 +4,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { onCall, CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { createHash, randomUUID } from 'node:crypto';
+import { publicError, errorMetadata } from './errors';
 
 initializeApp();
 export const db = getFirestore('default');
@@ -43,15 +44,17 @@ export function callable(name: string, handler: (uid: string, data: Record<strin
   return onCall({ region, enforceAppCheck: true, maxInstances: 2, minInstances: 0, timeoutSeconds: 540, secrets }, async request => {
     const started = Date.now();
     const operationId = randomUUID();
+    const requestId = typeof request.data?.requestId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(request.data.requestId) ? request.data.requestId : null;
+    logger.info('operation.started', { operationId, requestId, operation: name });
     try {
       const uid = await requireOwner(request);
       const result = await handler(uid, object(request.data));
-      logger.info('operation.succeeded', { operationId, operation: name, elapsedMs: Date.now() - started });
+      logger.info('operation.succeeded', { operationId, requestId, operation: name, elapsedMs: Date.now() - started });
       return result;
     } catch (error) {
-      logger.warn('operation.failed', { operationId, operation: name, code: error instanceof HttpsError ? error.code : 'internal', elapsedMs: Date.now() - started });
-      if (error instanceof HttpsError) throw error;
-      throw new HttpsError('internal', 'The operation could not be completed. Retry safely.');
+      logger.error('operation.failed', { operationId, requestId, operation: name, ...errorMetadata(error), elapsedMs: Date.now() - started });
+      const failure = publicError(error);
+      throw new HttpsError(failure.code, failure.message, { operationId, requestId });
     }
   });
 }

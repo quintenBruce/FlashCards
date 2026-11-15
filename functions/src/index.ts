@@ -3,7 +3,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { callable, db, root, region, id } from './core';
 import { mutate, importCards } from './content';
 import { syncReview, saveSession } from './study';
-import { chat, approve, grade, openAiKey } from './ai';
+import { chat, chatStatus, approve, grade, openAiKey } from './ai';
 import { saveReminder, reminderAction, registerDevice, dispatchDue } from './reminders';
 import { exportPage, restorePage } from './backup';
 import { cleanup } from './cleanup';
@@ -24,6 +24,7 @@ export const importContent = callable('importContent', importCards);
 export const syncReviewEvent = callable('syncReviewEvent', syncReview);
 export const saveStudySession = callable('saveStudySession', saveSession);
 export const sendDeckMessage = callable('sendDeckMessage', chat, [openAiKey.name]);
+export const getChatRequest = callable('getChatRequest', chatStatus);
 export const confirmProposal = callable('confirmProposal', approve);
 export const gradeAnswer = callable('gradeAnswer', grade, [openAiKey.name]);
 export const upsertReminder = callable('upsertReminder', saveReminder);
@@ -40,6 +41,8 @@ export const deleteConversation = callable('deleteConversation', async (uid, dat
   for (const turn of turns.docs) await turn.ref.delete();
   const proposals = await root(uid).collection('proposals').where('conversationId','==',conversationId).get();
   for (const proposal of proposals.docs) await proposal.ref.delete();
+  const requests = await root(uid).collection('chatRequests').where('conversationId','==',conversationId).get();
+  for (const request of requests.docs) await request.ref.delete();
   return { removed: true };
 });
 export const deleteAccount = callable('deleteAccount', async (uid, data) => {

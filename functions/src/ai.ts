@@ -5,7 +5,9 @@ import { randomUUID } from 'node:crypto';
 import { accepted, exactGrade, Card } from '../../shared/src/domain';
 import { db, root, id, text, object, hash, version, sameRequest } from './core';
 import { cardData, deckData } from './content';
-import { reserve, settle } from './usage';
+import { reserve, settle, releaseRejected } from './usage';
+import { logger } from 'firebase-functions';
+import { publicError, errorMetadata } from './errors';
 
 export const openAiKey = defineSecret('OPENAI_API_KEY');
 const string = { type: 'string' }, nullableString = { type: ['string', 'null'] };
@@ -28,12 +30,64 @@ async function response(uid: string, requestId: string, model: string, schema: u
   const payload = { model, store: false, reasoning: { effort: 'low' }, max_output_tokens: maxOutput,
     instructions, input: JSON.stringify(input), text: { format: { type: 'json_schema', name: 'decision', strict: true, schema } } };
   await reserve(uid, requestId, model, JSON.stringify(payload), maxOutput);
-  const result = await new OpenAI({ apiKey: openAiKey.value(), maxRetries: 0 }).responses.create(payload as any);
+  logger.info('ai.started', { requestId, model });
+  let result;
+  try {
+    result = await new OpenAI({ apiKey: openAiKey.value(), maxRetries: 0, timeout: 180_000 }).responses.create(payload as any);
+  } catch (error) {
+    logger.error('ai.failed', { requestId, model, ...errorMetadata(error) });
+    if (error instanceof OpenAI.APIError && [400,401,403,404,422,429].includes(error.status ?? 0)) await releaseRejected(uid, requestId);
+    throw error;
+  }
   if (result.usage) await settle(uid, requestId, model, result.usage.input_tokens, result.usage.output_tokens);
   if (result.status !== 'completed' || !result.output_text) throw new HttpsError('unavailable', 'AI response was incomplete. Nothing was changed.');
   return JSON.parse(result.output_text);
 }
 export async function chat(uid: string, data: Record<string, any>) {
+  const requestId = id(data.requestId), conversationId = id(data.conversationId), deckId = id(data.deckId);
+  text(data.message, 8000);
+  const ref = root(uid).collection('chatRequests').doc(requestId), fingerprint = hash(data);
+  const claimed = await db.runTransaction(async tx => {
+    const previous = await tx.get(ref);
+    if (previous.exists) { sameRequest(previous, fingerprint); return false; }
+    tx.create(ref, { fingerprint, conversationId, deckId, state: 'pending', createdAt: Date.now() });
+    return true;
+  });
+  if (!claimed) return chatStatus(uid, data);
+  try {
+    const result = await generateChat(uid, data);
+    await ref.update({ state: 'succeeded', result, updatedAt: Date.now() });
+    return chatStatus(uid, data);
+  } catch (error) {
+    logger.error('chat.failed', { requestId, ...errorMetadata(error) });
+    const failure = publicError(error);
+    // A completed turn wins if only the receipt write/read failed.
+    const completed = await root(uid).collection('turns').doc(requestId).get();
+    if (completed.exists) {
+      await ref.update({ state: 'succeeded', result: completed.get('result'), updatedAt: Date.now() });
+      return chatStatus(uid, data);
+    }
+    await ref.update({ state: 'failed', error: { code: failure.code, message: failure.message }, updatedAt: Date.now() });
+    return { requestId, state: 'failed', error: { code: failure.code, message: failure.message } };
+  }
+}
+
+export async function chatStatus(uid: string, data: Record<string, any>) {
+  const requestId = id(data.requestId), ref = root(uid).collection('chatRequests').doc(requestId);
+  const [request, turn] = await Promise.all([ref.get(), root(uid).collection('turns').doc(requestId).get()]);
+  if (!request.exists && !turn.exists) return { requestId, state: 'not_found' };
+  if (turn.exists) {
+    const proposalId = turn.get('proposalId');
+    const proposal = proposalId ? await root(uid).collection('proposals').doc(proposalId).get() : null;
+    return { requestId, state: 'succeeded', result: turn.get('result'), turn: turn.data(), proposal: proposal?.data() ?? null };
+  }
+  if (request.get('state') === 'failed') return { requestId, state: 'failed', error: request.get('error') };
+  if (request.get('state') === 'succeeded') return { requestId, state: 'failed', error: { code: 'not-found', message: 'This conversation response was removed.' } };
+  // A killed function cannot be assumed to have avoided a provider charge.
+  return { requestId, state: Date.now() - request.get('createdAt') > 570_000 ? 'uncertain' : 'pending' };
+}
+
+async function generateChat(uid: string, data: Record<string, any>) {
   const requestId = id(data.requestId), conversationId = id(data.conversationId), deckId = id(data.deckId);
   const message = text(data.message, 8000), conversation = root(uid).collection('conversations').doc(conversationId);
   const existingTurn = await root(uid).collection('turns').doc(requestId).get();

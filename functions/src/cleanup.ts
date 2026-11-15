@@ -15,7 +15,7 @@ export async function cleanup() {
       for (const row of rows.docs) {
         if (!row.get('purgeRequested') && !(row.get('deletedAt') && row.get('deletedAt') < Date.now() - 30 * 86400000)) continue;
         if (collection === 'decks') {
-          for (const childCollection of ['cards','conversations','proposals']) {
+          for (const childCollection of ['cards','conversations','proposals','chatRequests']) {
             const children = await root(account.id).collection(childCollection).where('deckId','==',row.id).get();
             for (const child of children.docs) {
               if (childCollection === 'conversations') {

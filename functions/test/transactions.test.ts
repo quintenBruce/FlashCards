@@ -35,7 +35,7 @@ vi.mock('../src/core', () => ({
 import { approve } from '../src/ai';
 import { mutate } from '../src/content';
 import { syncReview } from '../src/study';
-import { reserve, settle } from '../src/usage';
+import { reserve, settle, releaseRejected } from '../src/usage';
 import { budgetMonth } from '../../shared/src/schedule';
 
 const card = { deckId:'deck',term:'year',definition:'año',explanation:'',example:'',termAlternatives:[],definitionAlternatives:[],starred:false,order:0 };
@@ -87,6 +87,13 @@ describe('content and offline event conflicts', () => {
   });
 });
 describe('budget reservations', () => {
+  it('releases a known provider rejection only once without allowing replay', async () => {
+    await reserve('me','rejected','gpt-6.1-sol','',100);
+    await releaseRejected('me','rejected'); await releaseRejected('me','rejected');
+    expect(memory.records.get(`users/me/usage/${budgetMonth(Date.now())}`).reserved).toBe(0);
+    expect(memory.records.get('users/me/reservations/rejected').state).toBe('rejected');
+    await expect(reserve('me','rejected','gpt-6.1-sol','',100)).rejects.toHaveProperty('code','already-exists');
+  });
   it('serializes competing reservations before either can overspend', async () => {
     process.env.AI_MONTHLY_MICRO_USD='10000';
     const outcomes=await Promise.allSettled([reserve('me','a','gpt-6.1-sol','',0),reserve('me','b','gpt-6.1-sol','',0)]);
