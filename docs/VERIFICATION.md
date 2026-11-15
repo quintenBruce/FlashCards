@@ -153,3 +153,12 @@ Outgoing messages are right-aligned in primary-container bubbles. AI replies, pr
 The pending reply uses three dots with staggered 6 dp hops over a 1.2-second cycle. System-disabled animation keeps the dots still. The bubble exposes one accessible “AI is replying” label.
 
 Added conversation previews for normal and large text. assembleDebug and diff whitespace checks passed. No device installation, app launch or visual rendering occurred in this pass.
+
+## Conversation scrolling and simplified workflows — November 15, 2026
+
+- Conversations open at the newest message in a bottom-anchored list. Keyboard/composer height changes keep the latest message visible while following the end. Reading older messages preserves scroll position. Sending a message follows the end again.
+- The transcript merges pending requests and replies chronologically, deduplicating saved receipts. Added three regression tests for old failed requests, newest outgoing messages and replacement by a saved reply.
+- Removed the Reject action. The user approves a proposal or sends a refinement. Only the latest proposal offers approval, with older suggestions marked “Revised below.” Proposal approval is disabled while a reply is in flight.
+- Trash is the sole removal workflow. Archive controls/navigation were removed. Legacy archived decks are visible and studyable. Trashed or purge-requested decks remain excluded. Added a regression case for unavailable decks and updated the legacy-archive expectation.
+- Removed Undo wording and added Previous for practice, including from completion. It returns to the last rated card with its previous confidence/queue restored, allowing a replacement rating. No undo snackbar was added.
+- Android unit tests and assembleDebug passed. Phone keyboard/scroll animation has not been visually exercised by the agent.

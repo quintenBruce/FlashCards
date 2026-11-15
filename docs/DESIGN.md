@@ -134,3 +134,11 @@ Use action chips for Study/Resume study, Add card and Ask AI. Keep this row outs
 Each deck may belong to one unfinished session. Resume preserves its mode, settings, queue and answers. Combined reviews hold all included decks until finished. Completed sessions stay in history. Legacy duplicates are consolidated on resume, keeping older snapshots as replaced history.
 
 Use Material 3 Expressive theming with expressive motion. Study faces show their learning content directly, without visible Prompt/Answer headings, flip instructions or a separate Show answer button. Retain accessible action labels.
+
+## Current conversation and removal behavior
+
+Conversations open at the latest message. Anchor the transcript to the bottom through keyboard resizing while the reader is following the latest messages. Preserve the reader’s position when they scroll into older messages. Use a single chronological transcript for replies and pending requests.
+
+Offer approval and message refinement for AI suggestions. Remove Reject. A revised proposal replaces the earlier approval action.
+
+Trash is the only deck-removal workflow. Restore is available from Trash. Previously archived records return to the normal deck library and may be studied. Practice uses Previous to revisit the last rating and replace it. There is no Undo button or snackbar.

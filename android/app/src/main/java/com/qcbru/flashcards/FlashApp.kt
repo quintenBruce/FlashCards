@@ -88,15 +88,14 @@ import java.time.format.DateTimeFormatter
                 IconButton({menu=true}){Icon(Icons.Default.MoreVert,if(current is DeckRoute)"Deck options"else"More options")}
                 DropdownMenu(menu,{menu=false}) {
                     if(current is HomeRoute) {
-                        listOf("Study history","Reminders","Archived decks","Settings").forEach { name ->
+                        listOf("Study history","Reminders","Settings").forEach { name ->
                             DropdownMenuItem(text={Text(name)},onClick={menu=false;stack.add(SecondaryRoute(name))})
                         }
                     }
                     currentDeck?.let { deck ->
                         DropdownMenuItem(text={Text(if(deckTrash)"Show active cards"else"Card trash")},onClick={menu=false;deckTrash=!deckTrash})
-                        DropdownMenuItem(text={Text("Study options")},onClick={menu=false;setupDecks=deck.id;setupFilter="all"},enabled=!deck.archived)
+                        DropdownMenuItem(text={Text("Study options")},onClick={menu=false;setupDecks=deck.id;setupFilter="all"},enabled=true)
                         DropdownMenuItem(text={Text("Edit deck")},onClick={menu=false;editDeckId=deck.id},enabled=state.online&&!state.busy)
-                        DropdownMenuItem(text={Text(if(deck.archived)"Unarchive"else"Archive")},onClick={menu=false;model.saveDeck(deck.copy(archived=!deck.archived)) {}},enabled=state.online&&!state.busy)
                         DropdownMenuItem(text={Text("Move to trash")},onClick={menu=false;deleteDeckId=deck.id},enabled=state.online&&!state.busy)
                     }
                 }
@@ -115,7 +114,6 @@ import java.time.format.DateTimeFormatter
                             is SecondaryRoute -> when(key.name) {
                                 "Study history" -> ReviewScreen(latest,onStudy={ids,filter->setupDecks=ids.joinToString(",");setupFilter=filter},onResume={stack.add(SessionRoute(it))})
                                 "Reminders" -> RemindersScreen(latest,model,onNotifications)
-                                "Archived decks" -> DecksScreen(latest,onDeck={stack.add(DeckRoute(it))},archived=true)
                                 else -> SettingsScreen(latest,model,onVoices)
                             }
                             is DeckRoute -> DeckScreen(key,latest,model,trash=deckTrash,onChat={stack.add(ChatRoute(key.id))},
@@ -177,9 +175,9 @@ import java.time.format.DateTimeFormatter
 @Composable private fun Empty(title:String,body:String) {
     Column(Modifier.fillMaxWidth().padding(vertical=24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {Text(title,style=MaterialTheme.typography.titleLarge);Text(body,color=MaterialTheme.colorScheme.onSurfaceVariant)}
 }
-@Composable internal fun DecksScreen(state:FlashState,onDeck:(String)->Unit,archived:Boolean=false) {
+@Composable internal fun DecksScreen(state:FlashState,onDeck:(String)->Unit) {
     var search by rememberSaveable { mutableStateOf("") }
-    val decks=state.decks.filter{it.deletedAt==null&&!it.purgeRequested&&it.archived==archived&&it.title.contains(search,true)}.sortedByDescending{it.updatedAt}
+    val decks=state.decks.filter{it.deletedAt==null&&!it.purgeRequested&&it.title.contains(search,true)}.sortedByDescending{it.updatedAt}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=96.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
         item{OutlinedTextField(search,{search=it},label={Text("Search decks")},singleLine=true,modifier=Modifier.fillMaxWidth())}
         if(state.loading)item{CircularProgressIndicator()}
@@ -198,7 +196,7 @@ import java.time.format.DateTimeFormatter
     var selected by rememberSaveable{mutableStateOf(listOf<String>())}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item{Heading("Keep it fresh","Review across decks, or revisit what you already know.")}
-        items(state.decks.filter{it.deletedAt==null&&!it.archived},key={it.id}){d->Row(verticalAlignment=Alignment.CenterVertically){Checkbox(d.id in selected,{selected=if(it)selected+d.id else selected-d.id});Text(d.title)}}
+        items(state.decks.filter{it.deletedAt==null},key={it.id}){d->Row(verticalAlignment=Alignment.CenterVertically){Checkbox(d.id in selected,{selected=if(it)selected+d.id else selected-d.id});Text(d.title)}}
         item{Text("No selection includes all active decks.",style=MaterialTheme.typography.bodySmall)}
         item{Button({onStudy(selected.toSet(),"struggling")},modifier=Modifier.fillMaxWidth()){Text("Practice struggling cards")}}
         item{OutlinedButton({onStudy(selected.toSet(),"known")},modifier=Modifier.fillMaxWidth()){Text("Refresh known cards")}}
@@ -227,7 +225,7 @@ import java.time.format.DateTimeFormatter
     val cards=state.cards.filter{it.deckId==route.id&&(it.deletedAt!=null)==trash&&!it.purgeRequested&&(it.term.contains(search,true)||it.definition.contains(search,true))}.sortedBy{it.order}
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=16.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            if(deck!=null&&!deck.archived) AssistChip(
+            if(deck!=null) AssistChip(
                 onClick=onStudy,
                 enabled=resumableStudy(state.sessions,setOf(route.id))!=null||cards.isNotEmpty(),
                 label={Text(if(resumableStudy(state.sessions,setOf(route.id))!=null)"Resume study"else"Study")},
@@ -332,15 +330,48 @@ import java.time.format.DateTimeFormatter
     val requests=state.chatRequests.filter{it.conversationId==conversation}.sortedBy{it.createdAt}
     val active=conversation in state.activeChats
     val unresolved=requests.lastOrNull{it.state in listOf("pending","uncertain")}
+    val turns=state.turns.filter{it.conversationId==conversation}.sortedBy{it.createdAt}
+    val outstanding=requests.filter{request->turns.none{it.id==request.id}}
+    val transcript=chatTranscript(turns,requests)
+    val latestProposalId=turns.lastOrNull{it.proposalId!=null}?.proposalId
     val listState=androidx.compose.foundation.lazy.rememberLazyListState()
-    LaunchedEffect(conversation,state.turns.size,requests,active){if(listState.layoutInfo.totalItemsCount>0&&!listState.canScrollForward)listState.animateScrollToItem(listState.layoutInfo.totalItemsCount-1)}
+    var followLatest by remember(conversation){mutableStateOf(true)}
+    LaunchedEffect(conversation) {
+        listState.scrollToItem(0)
+        snapshotFlow {
+            listState.isScrollInProgress to
+                (listState.firstVisibleItemIndex==0&&listState.firstVisibleItemScrollOffset==0)
+        }.collect { (scrolling,atLatest) ->
+            if(scrolling)followLatest=atLatest
+        }
+    }
+    val viewportHeight=listState.layoutInfo.viewportEndOffset-listState.layoutInfo.viewportStartOffset
+    LaunchedEffect(conversation,turns.lastOrNull()?.id,outstanding.lastOrNull()?.id,active,viewportHeight) {
+        if(followLatest&&(turns.isNotEmpty()||outstanding.isNotEmpty()))listState.scrollToItem(0)
+    }
     var draft by rememberSaveable(deckId,conversation){mutableStateOf("")};var details by rememberSaveable{mutableStateOf<String?>(null)}
 
     Column(Modifier.fillMaxSize().imePadding()) {
-        LazyColumn(Modifier.weight(1f),state=listState,contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-            val turns=state.turns.filter{it.conversationId==conversation}.sortedBy{it.createdAt}
+        LazyColumn(Modifier.weight(1f),state=listState,reverseLayout=true,contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             if(turns.isEmpty()&&requests.isEmpty())item{Empty("What would you like to learn?","Describe a topic or paste your notes.")}
-            items(turns,key={it.id}){turn->
+            items(transcript,key={it.id}) { entry ->
+                val request=entry.request
+                if(request!=null) {
+                Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    ChatBubble(fromUser=true) { Text(request.message) }
+                    if(active&&request.id==unresolved?.id) LoadingMessageBubble()
+                    else ChatBubble {
+                        if(request.state=="failed")Text("Request failed. Your deck was not changed.",color=MaterialTheme.colorScheme.error)
+                        else Text("The response has not been confirmed. Check status to recover it.")
+                        if(request.error.isNotBlank())Text(request.error,color=MaterialTheme.colorScheme.error)
+
+                        if(!active&&request.state!="failed")OutlinedButton({model.recoverChat(request)},enabled=state.online){Text("Check status / retry safely")}
+                        if(!active&&request.state=="failed")TextButton({draft=request.message}){Text("Use message again")}
+                    }
+                }
+                }
+                val turn=entry.turn
+                if(turn!=null) {
                 Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
                     ChatBubble(fromUser=true) { Text(turn.user) }
                     ChatBubble {
@@ -355,32 +386,18 @@ import java.time.format.DateTimeFormatter
                         Text(proposal.operations.groupingBy{it.kind.replace('_',' ')}.eachCount().entries.joinToString(" · "){"${it.value} ${it.key}"})
                         TextButton({details=if(details==proposal.id)null else proposal.id}){Text(if(details==proposal.id)"Hide changes"else"Review before/after")}
                         if(details==proposal.id)proposal.operations.forEach{o->Text(o.kind.replace('_',' '),fontWeight=FontWeight.SemiBold);o.before?.let{before->Text(before.entries.filter{it.key in listOf("title","term","definition")}.joinToString("\n"){it.value.toString().trim('"')},style=MaterialTheme.typography.bodySmall)};Text(o.after?.entries?.filter{it.key in listOf("title","term","definition","example","explanation")}?.joinToString("\n"){it.value.toString().trim('"')} ?: "Move to trash",style=MaterialTheme.typography.bodySmall)}
-                        if(proposal.state=="pending"&&proposal.expiresAt>System.currentTimeMillis())Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            Button({model.confirm(proposal,true) { if(proposal.operations.any{it.kind=="create_deck"})onCreated();if(proposal.operations.any{it.kind=="delete_deck"})onDeleted() }},enabled=state.online&&!state.busy){Text(if(proposal.operations.any{it.kind=="create_deck"})"Create deck"else"Apply changes")}
-                            OutlinedButton({model.confirm(proposal,false)},enabled=state.online&&!state.busy){Text("Reject")}
-                        }else Text(if(proposal.state=="pending")"Expired — ask for a fresh preview"else proposal.state.replaceFirstChar{it.uppercase()})
+                        if(proposal.state=="pending"&&proposal.id==latestProposalId&&proposal.expiresAt>System.currentTimeMillis())Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            Button({model.confirm(proposal,true) { if(proposal.operations.any{it.kind=="create_deck"})onCreated();if(proposal.operations.any{it.kind=="delete_deck"})onDeleted() }},enabled=state.online&&!state.busy&&!active){Text(if(proposal.operations.any{it.kind=="create_deck"})"Create deck"else"Apply changes")}
+                        }else Text(if(proposal.state=="pending"&&proposal.id!=latestProposalId)"Revised below"else if(proposal.state=="pending")"Expired — ask for a fresh preview"else proposal.state.replaceFirstChar{it.uppercase()})
                     }}
                     }
                 }
-            }
-            items(requests.filter{request->turns.none{it.id==request.id}},key={"request_${it.id}"}){request->
-                Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    ChatBubble(fromUser=true) { Text(request.message) }
-                    if(active&&request.id==unresolved?.id) LoadingMessageBubble()
-                    else ChatBubble {
-                        if(request.state=="failed")Text("Request failed. Your deck was not changed.",color=MaterialTheme.colorScheme.error)
-                        else Text("The response has not been confirmed. Check status to recover it.")
-                        if(request.error.isNotBlank())Text(request.error,color=MaterialTheme.colorScheme.error)
-
-                        if(!active&&request.state!="failed")OutlinedButton({model.recoverChat(request)},enabled=state.online){Text("Check status / retry safely")}
-                        if(!active&&request.state=="failed")TextButton({draft=request.message}){Text("Use message again")}
-                    }
                 }
             }
         }
         Row(Modifier.padding(12.dp),verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(draft,{draft=it},label={Text(if(state.decks.any{it.id==deckId})"Ask about this deck…"else"Describe your deck…")},modifier=Modifier.weight(1f),maxLines=5,enabled=!active,isError=draft.length>8000)
-            Button({selectedConversation=conversation;model.sendMessage(deckId,conversation,draft);draft=""},enabled=state.online&&!active&&unresolved==null&&draft.isNotBlank()&&draft.length<=8000){Text("Send")}
+            Button({followLatest=true;selectedConversation=conversation;model.sendMessage(deckId,conversation,draft);draft=""},enabled=state.online&&!active&&unresolved==null&&draft.isNotBlank()&&draft.length<=8000){Text("Send")}
         }
     }
 }
@@ -415,7 +432,7 @@ import java.time.format.DateTimeFormatter
                     }
                 }
             }
-            if(session.undoJson!=null)OutlinedButton({model.undo(session)},enabled=!sessionSaving){Text("Undo last rating")}
+            if(session.undoJson!=null)OutlinedButton({model.undo(session)},enabled=!sessionSaving){Text("Previous")}
             Button(onExit,modifier=Modifier.fillMaxWidth()){Text("Done")}
         }else if(item!=null) {
             val completed=if(session.mode=="practice")session.completed.size else session.cursor
@@ -429,13 +446,15 @@ import java.time.format.DateTimeFormatter
                 },label="Next card"){shown->key(shown.key){FlashCardFace(shown,if(shown.key==item.key)session.revealed else false,onFlip={if(!sessionSaving)model.reveal(session)},onSpeak=onSpeak,onSwipe={right->
                     if(!sessionSaving){if(session.mode=="browse")model.advance(session,if(right)-1 else 1)else if(session.revealed)model.rate(session,if(right)"high"else"low")}
                 },enabled=shown.key==item.key&&!sessionSaving)}}
-                if(session.mode=="practice"&&session.revealed) {
+                if(session.mode=="practice") {
+                    if(session.revealed) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         listOf("low" to "↻ Low","medium" to "≈ Medium","high" to "✓ High").forEach{(value,label)->
                             FilledTonalButton({model.rate(session,value)},enabled=session.revealed&&!sessionSaving,modifier=Modifier.weight(1f).heightIn(min=52.dp),contentPadding=PaddingValues(8.dp)){Text(label)}
                         }
                     }
-                    TextButton({model.undo(session)},enabled=session.undoJson!=null&&!sessionSaving){Text("Undo last rating")}
+                    }
+                    TextButton({model.undo(session)},enabled=session.undoJson!=null&&!sessionSaving){Text("Previous")}
                 }else Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){OutlinedButton({model.advance(session,-1)},enabled=session.cursor>0&&!sessionSaving){Text("Previous")};OutlinedButton({model.advance(session,1)},enabled=!sessionSaving){Text(if(session.cursor==session.items.lastIndex)"Finish"else"Next")}}
             }else {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -559,7 +578,7 @@ import java.time.format.DateTimeFormatter
         if(kind=="weekdays")Row(Modifier.horizontalScroll(rememberScrollState())){(1..7).forEach{day->FilterChip(day in days,{days=if(day in days)days-day else days+day},label={Text(DayOfWeek.of(day).name.take(3).lowercase())})}}
         Choice("Review",listOf("all","struggling","known","starred","unrated"),filter,{filter=it})
         Text("No deck selection includes all active decks.")
-        state.decks.filter{it.deletedAt==null&&!it.archived}.forEach{d->Row(verticalAlignment=Alignment.CenterVertically){Checkbox(d.id in decks,{decks=if(it)decks+d.id else decks-d.id});Text(d.title)}}
+        state.decks.filter{it.deletedAt==null}.forEach{d->Row(verticalAlignment=Alignment.CenterVertically){Checkbox(d.id in decks,{decks=if(it)decks+d.id else decks-d.id});Text(d.title)}}
         Row(verticalAlignment=Alignment.CenterVertically){Switch(enabled,{enabled=it});Text("Enabled")}
         if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
         Button({runCatching {

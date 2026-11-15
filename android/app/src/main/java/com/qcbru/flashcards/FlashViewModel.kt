@@ -126,7 +126,7 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
     fun removeDownload(deck: Deck) = action { repository.removeDownload(deck.id) }
     fun import(deck: Deck, cards: List<FlashCard>, done: () -> Unit) = action { repository.importCards(deck,cards); done() }
     fun startSession(deckIds: Set<String>, filter: String, direction: String, shuffle: Boolean, mode: String, count: Int, done: (String) -> Unit) = action {
-        val selected=state.value.decks.filter{(deckIds.isEmpty()||it.id in deckIds)&&!it.archived&&it.deletedAt==null&&!it.purgeRequested}
+        val selected=state.value.decks.filter{(deckIds.isEmpty()||it.id in deckIds)&&it.deletedAt==null&&!it.purgeRequested}
         resumableStudy(state.value.sessions,selected.map{it.id}.toSet())?.let{existing->
             val resumed=repository.startOrResumeSession(existing)
             done(resumed.id);return@action

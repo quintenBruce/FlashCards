@@ -92,7 +92,7 @@ fun eligible(card: FlashCard, direction: String, filter: String, progress: List<
 object StudyEngine {
     fun create(decks: List<Deck>, cards: List<FlashCard>, progress: List<Progress>, filter: String, direction: String,
         shuffle: Boolean, mode: String, count: Int): StudySession {
-        val active = decks.filter { !it.archived && it.deletedAt == null && it.downloaded }.associateBy { it.id }
+        val active = decks.filter { it.deletedAt == null && !it.purgeRequested && it.downloaded }.associateBy { it.id }
         val pool = cards.sortedWith(compareBy({ it.deckId }, { it.order })).flatMap { card ->
             val deck = active[card.deckId] ?: return@flatMap emptyList()
             (if (direction == "both") listOf("term", "definition") else listOf(direction)).filter { eligible(card, it, filter, progress) }.map { dir ->

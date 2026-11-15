@@ -52,7 +52,12 @@ class StudyEngineTest {
         assertEquals(20,session.items.size)
         assertEquals(listOf("deck"),session.deckIds)
     }
-    @Test fun archivedDecksCannotProduceStudyItems() {
+    @Test fun legacyArchivedDecksRemainAccessibleInTrashOnlyWorkflow() {
         val session=StudyEngine.create(listOf(deck.copy(archived=true)),listOf(card),emptyList(),"all","term",false,"practice",20)
-        assertTrue(session.items.isEmpty())
+        assertEquals(1,session.items.size)
+    }    @Test fun trashedDecksAndPurgedDecksCannotBeStudied() {
+        for(unavailable in listOf(deck.copy(deletedAt=1),deck.copy(purgeRequested=true))) {
+            val session=StudyEngine.create(listOf(unavailable),listOf(card),emptyList(),"all","term",false,"practice",20)
+            assertTrue(session.items.isEmpty())
+        }
     }}
