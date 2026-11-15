@@ -256,6 +256,14 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
                 }
             }
         }
+        if(state.chatConversationId==conversation) {
+            if(state.chatPending) Text("Creating a response… This may take a minute.",Modifier.padding(horizontal=20.dp,vertical=8.dp),style=MaterialTheme.typography.bodyMedium)
+            if(state.chatError.isNotBlank()) Text(state.chatError,Modifier.padding(horizontal=20.dp,vertical=8.dp),color=MaterialTheme.colorScheme.error)
+            if(state.chatReply.isNotBlank() && state.turns.none{it.conversationId==conversation && it.assistant==state.chatReply}) {
+                Text(state.chatReply,Modifier.padding(horizontal=20.dp,vertical=8.dp))
+                if(state.chatProposalPending) Text("Loading the proposed changes for approval…",Modifier.padding(horizontal=20.dp),style=MaterialTheme.typography.bodySmall)
+            }
+        }
         Row(Modifier.padding(12.dp),verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(draft,{draft=it},label={Text("Ask about this deck")},modifier=Modifier.weight(1f),maxLines=5,enabled=!state.busy)
             Button({model.sendMessage(deckId,conversation,draft){draft=""}},enabled=state.online&&!state.busy&&draft.isNotBlank()){Text("Send")}

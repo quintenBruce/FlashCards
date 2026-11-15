@@ -10,6 +10,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.tasks.await
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.jsonPrimitive
 
 data class FlashState(
     val uid: String? = null, val email: String = "", val loading: Boolean = false, val busy: Boolean = false,
@@ -18,6 +19,8 @@ data class FlashState(
     val reminders: List<StudyReminder> = emptyList(), val turns: List<Turn> = emptyList(), val proposals: List<Proposal> = emptyList(), val conversations: List<Conversation> = emptyList(),
     val usage: Usage = Usage(), val theme: String = "system", val rate: Float = .85f, val voice: String? = null,
     val importText: String = "", val exportText: String = "", val pendingReminder: String? = null,
+    val chatConversationId: String? = null, val chatPending: Boolean = false,
+    val chatReply: String = "", val chatProposalPending: Boolean = false, val chatError: String = "",
 )
 class FlashViewModel(application: Application) : AndroidViewModel(application) {
     val repository = (application as FlashApplication).repository
@@ -126,7 +129,17 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
         repository.persistSession(session.copy(grades = session.grades+(key to old.copy(verdict = verdict,explanation = "Grade corrected by you",manual = true)),revision = session.revision+1))
     }
     fun sendMessage(deckId: String, conversationId: String, message: String, done: () -> Unit) = action {
-        repository.sendMessage(deckId,conversationId,message); done()
+        mutable.update { it.copy(chatConversationId = conversationId,chatPending = true,chatReply = "",chatProposalPending = false,chatError = "") }
+        try {
+            val result = repository.sendMessage(deckId,conversationId,message)
+            mutable.update { it.copy(chatReply = result["reply"]?.jsonPrimitive?.content.orEmpty(),
+                chatProposalPending = result["proposalId"]?.toString() != null && result["proposalId"]?.toString() != "null") }
+            done()
+        } catch (error: Exception) {
+            mutable.update { it.copy(chatError = error.localizedMessage ?: "Could not send your message. Try again.") }
+        } finally {
+            mutable.update { it.copy(chatPending = false) }
+        }
     }
     fun confirm(proposal: Proposal, approve: Boolean) = action { repository.confirm(proposal,approve) }
     fun saveReminder(reminder: StudyReminder, done: () -> Unit) = action { repository.saveReminder(reminder); done() }
