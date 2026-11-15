@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.navigation3.runtime.*
 import androidx.navigation3.ui.NavDisplay
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.serialization.Serializable
 import java.time.*
 import java.time.format.DateTimeFormatter
@@ -78,23 +80,31 @@ import java.time.format.DateTimeFormatter
                     if(!state.online&&state.uid!=null) Surface(color=MaterialTheme.colorScheme.secondaryContainer) {
                         Text("Offline · Downloaded study and progress are available",Modifier.fillMaxWidth().padding(12.dp),style=MaterialTheme.typography.bodySmall)
                     }
-                    if(state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if(state.busy&&!inSession) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if(state.syncError.isNotBlank()) Surface(color=MaterialTheme.colorScheme.errorContainer) {
+                        Column(Modifier.padding(12.dp)){Text(state.syncError);TextButton(model::refresh,enabled=!state.busy){Text("Retry cloud sync")}}
+                    }
                     if(state.uid==null) Welcome(onSignIn,state.busy)
                     else NavDisplay(backStack=stack,onBack={ if(stack.size>1) stack.removeLastOrNull() },entryProvider={ key ->
                         when(key) {
                             is HomeRoute -> NavEntry(key) {
+                                val screenState by model.state.collectAsStateWithLifecycle()
                                 when(tab) {
-                                    "Decks" -> DecksScreen(state,model,onDeck={stack.add(DeckRoute(it))},onCreate={newDeck=true},
+                                    "Decks" -> DecksScreen(screenState,model,onDeck={stack.add(DeckRoute(it))},onCreate={newDeck=true},
                                         onAI={stack.add(DeckRoute(newId(),true))},onImport={importDeckId=it},onResume={stack.add(SessionRoute(it))},
                                         onEdit={editDeckId=it})
-                                    "Review" -> ReviewScreen(state,onStudy={ids,filter->setupDecks=ids.joinToString(",");setupFilter=filter},onResume={stack.add(SessionRoute(it))})
-                                    "Reminders" -> RemindersScreen(state,model,onNotifications)
-                                    else -> SettingsScreen(state,model,onExport,onOpenFile,onVoices)
+                                    "Review" -> ReviewScreen(screenState,onStudy={ids,filter->setupDecks=ids.joinToString(",");setupFilter=filter},onResume={stack.add(SessionRoute(it))})
+                                    "Reminders" -> RemindersScreen(screenState,model,onNotifications)
+                                    else -> SettingsScreen(screenState,model,onExport,onOpenFile,onVoices)
                                 }
                             }
-                            is DeckRoute -> NavEntry(key) { DeckScreen(key,state,model,onEdit={editDeckId=it},onImport={importDeckId=it},
+                            is DeckRoute -> NavEntry(key) {
+                                val screenState by model.state.collectAsStateWithLifecycle()
+                                DeckScreen(key,screenState,model,onEdit={editDeckId=it},onImport={importDeckId=it},
                                 onStudy={setupDecks=key.id;setupFilter="all"},onExport=onExport,onSpeak=onSpeak) }
-                            is SessionRoute -> NavEntry(key) { SessionScreen(state.sessions.find {it.id==key.id},state,model,
+                            is SessionRoute -> NavEntry(key) {
+                                val screenState by model.state.collectAsStateWithLifecycle()
+                                SessionScreen(screenState.sessions.find {it.id==key.id},screenState,model,
                                 onExit={stack.removeLastOrNull()},onSpeak=onSpeak) }
                             else -> error("Unknown navigation destination")
                         }
@@ -136,6 +146,9 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
         item{Heading("Your decks","A little practice, a lasting difference.")}
         item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onCreate){Icon(Icons.Default.Add,null);Text("New deck")};OutlinedButton(onAI){Text("Create with AI")}}}
+        items(state.chatRequests.filter{request->state.decks.none{it.id==request.deckId}}.distinctBy{it.deckId},key={"draft_${it.deckId}"}){request->
+            OutlinedButton({onDeck(request.deckId)}){Text("Resume AI deck draft")}
+        }
         item{OutlinedTextField(search,{search=it},label={Text("Search decks")},modifier=Modifier.fillMaxWidth(),singleLine=true)}
         item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){FilterChip(sort=="Name",{sort=if(sort=="Name")"Recent"else"Name"},label={Text("Sort: $sort")});FilterChip(archived,{archived=!archived},label={Text("Archived")})}}
         val unfinished=state.sessions.firstOrNull{!it.finished}
@@ -176,7 +189,7 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
 @Composable private fun DeckScreen(route:DeckRoute,state:FlashState,model:FlashViewModel,onEdit:(String)->Unit,onImport:(String)->Unit,
     onStudy:()->Unit,onExport:(String,String)->Unit,onSpeak:(String,String)->Unit) {
     val deck=state.decks.find{it.id==route.id}
-    var tab by rememberSaveable(route.id){mutableStateOf(if(route.chat)"Chat"else"Cards")}
+    var tab by rememberSaveable(route.id){mutableStateOf(if(route.chat||deck==null)"Chat"else"Cards")}
     var cardId by rememberSaveable(route.id){mutableStateOf<String?>(null)};var newCard by rememberSaveable(route.id){mutableStateOf(false)}
     var search by rememberSaveable(route.id){mutableStateOf("")};var stars by rememberSaveable(route.id){mutableStateOf(false)}
     var trash by rememberSaveable(route.id){mutableStateOf(false)};var deleteCardId by rememberSaveable{mutableStateOf<String?>(null)}
@@ -186,7 +199,7 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
         PrimaryTabRow(selectedTabIndex=listOf("Cards","Study","Chat").indexOf(tab)) {
             listOf("Cards","Study","Chat").forEach{name->Tab(tab==name,{tab=name},text={Text(name)})}
         }
-        if(tab=="Chat")ChatScreen(route.id,state,model)
+        if(tab=="Chat")Box(Modifier.weight(1f)){ChatScreen(route.id,state,model)}
         else if(deck==null)Empty("No deck saved yet","Open Chat to create the deck, then approve the proposed changes.")
         else if(deck.deletedAt!=null)Empty("This deck is in trash","Restore it from Settings to study or edit it.")
         else if(tab=="Study")Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(16.dp)) {
@@ -225,24 +238,35 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
     }}
 }
 @Composable private fun ChatScreen(deckId:String,state:FlashState,model:FlashViewModel) {
-    val conversationIds=state.conversations.filter{it.deckId==deckId}.sortedByDescending{it.updatedAt}.map{it.id}
-    var conversation by rememberSaveable(deckId){mutableStateOf("${deckId}_${newId()}")}
+    val conversationIds=(state.conversations.filter{it.deckId==deckId}.sortedByDescending{it.updatedAt}.map{it.id}+
+        state.chatRequests.filter{it.deckId==deckId}.sortedByDescending{it.createdAt}.map{it.conversationId}).distinct()
+    var selectedConversation by rememberSaveable(deckId){mutableStateOf<String?>(null)}
+    val conversation=selectedConversation?:conversationIds.firstOrNull()?:"draft_$deckId"
+    val requests=state.chatRequests.filter{it.conversationId==conversation}.sortedBy{it.createdAt}
+    val active=conversation in state.activeChats
+    val unresolved=requests.lastOrNull{it.state in listOf("pending","uncertain")}
+    val listState=androidx.compose.foundation.lazy.rememberLazyListState()
+    LaunchedEffect(conversation,state.turns.size,requests,active){if(listState.layoutInfo.totalItemsCount>0)listState.animateScrollToItem(listState.layoutInfo.totalItemsCount-1)}
     var draft by rememberSaveable(deckId,conversation){mutableStateOf("")};var details by rememberSaveable{mutableStateOf(false)}
     var deleting by rememberSaveable{mutableStateOf(false)}
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)) {
-            TextButton({conversation="${deckId}_${newId()}"}){Text("New conversation")}
-            conversationIds.forEachIndexed{index,cid->FilterChip(conversation==cid,{conversation=cid},label={Text("Chat ${index+1}")})}
-            TextButton({deleting=true}){Text("Delete chat")}
+            TextButton({selectedConversation="${deckId}_${newId()}"},enabled=!active){Text("New conversation")}
+            conversationIds.forEachIndexed{index,cid->FilterChip(conversation==cid,{selectedConversation=cid},label={Text("Chat ${index+1}")})}
+            TextButton({deleting=true},enabled=!active){Text("Delete chat")}
         }
-        LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+        LazyColumn(Modifier.weight(1f),state=listState,contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             val turns=state.turns.filter{it.conversationId==conversation}.sortedBy{it.createdAt}
-            if(turns.isEmpty())item{Empty("Build understanding","Try “Create 30 travel phrases with natural Spanish examples” or “Explain when these words use estar.” Changes wait for your approval.")}
+            if(turns.isEmpty()&&requests.isEmpty())item{Empty("Build understanding","Try “Create 30 travel phrases with natural Spanish examples” or “Explain when these words use estar.” Changes wait for your approval.")}
             items(turns,key={it.id}){turn->
                 Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
                     Surface(color=MaterialTheme.colorScheme.primaryContainer,shape=MaterialTheme.shapes.medium){Text(turn.user,Modifier.padding(14.dp))}
                     Text(turn.assistant)
                     val proposal=state.proposals.find{it.id==turn.proposalId}
+                    if(turn.proposalId!=null&&proposal==null) {
+                        Text("The approval preview has not loaded yet.",color=MaterialTheme.colorScheme.error)
+                        TextButton({state.chatRequests.find{it.id==turn.id}?.let(model::recoverChat)?:model.refresh()},enabled=!active){Text("Recover approval preview")}
+                    }
                     if(proposal!=null)OutlinedCard(Modifier.fillMaxWidth()) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                         Text("${proposal.operations.size} proposed changes",style=MaterialTheme.typography.titleMedium)
                         Text(proposal.operations.groupingBy{it.kind.replace('_',' ')}.eachCount().entries.joinToString(" · "){"${it.value} ${it.key}"})
@@ -255,28 +279,40 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
                     }}
                 }
             }
-        }
-        if(state.chatConversationId==conversation) {
-            if(state.chatPending) Text("Creating a response… This may take a minute.",Modifier.padding(horizontal=20.dp,vertical=8.dp),style=MaterialTheme.typography.bodyMedium)
-            if(state.chatError.isNotBlank()) Text(state.chatError,Modifier.padding(horizontal=20.dp,vertical=8.dp),color=MaterialTheme.colorScheme.error)
-            if(state.chatReply.isNotBlank() && state.turns.none{it.conversationId==conversation && it.assistant==state.chatReply}) {
-                Text(state.chatReply,Modifier.padding(horizontal=20.dp,vertical=8.dp))
-                if(state.chatProposalPending) Text("Loading the proposed changes for approval…",Modifier.padding(horizontal=20.dp),style=MaterialTheme.typography.bodySmall)
+            items(requests.filter{request->turns.none{it.id==request.id}},key={"request_${it.id}"}){request->
+                Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Surface(color=MaterialTheme.colorScheme.primaryContainer,shape=MaterialTheme.shapes.medium){Text(request.message,Modifier.padding(14.dp))}
+                    if(active&&request.id==unresolved?.id){LinearProgressIndicator(Modifier.fillMaxWidth());Text("Sending and creating your response… This can take a few minutes.")}
+                    else if(request.state=="failed")Text("Request failed. Your deck was not changed.",color=MaterialTheme.colorScheme.error)
+                    else Text("The response has not been confirmed. Check status to recover it.")
+                    if(request.error.isNotBlank())Text(request.error,color=MaterialTheme.colorScheme.error)
+                    Text("Request: ${request.id}",style=MaterialTheme.typography.bodySmall)
+                    if(!active&&request.state!="failed")OutlinedButton({model.recoverChat(request)},enabled=state.online){Text("Check status / retry safely")}
+                    if(!active&&request.state=="failed")TextButton({draft=request.message}){Text("Use message again")}
+                }
             }
         }
         Row(Modifier.padding(12.dp),verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(draft,{draft=it},label={Text("Ask about this deck")},modifier=Modifier.weight(1f),maxLines=5,enabled=!state.busy)
-            Button({model.sendMessage(deckId,conversation,draft){draft=""}},enabled=state.online&&!state.chatPending&&draft.isNotBlank()){Text("Send")}
+            OutlinedTextField(draft,{draft=it},label={Text("Ask about this deck")},modifier=Modifier.weight(1f),maxLines=5,enabled=!active,isError=draft.length>8000)
+            Button({selectedConversation=conversation;model.sendMessage(deckId,conversation,draft);draft=""},enabled=state.online&&!active&&unresolved==null&&draft.isNotBlank()&&draft.length<=8000){Text(if(active)"Sending…"else"Send")}
         }
     }
-    if(deleting)ConfirmDialog("Delete conversation?","This removes its messages and pending proposals.",{deleting=false}){model.deleteConversation(conversation);conversation="${deckId}_${newId()}";deleting=false}
+    if(deleting)ConfirmDialog("Delete conversation?","This removes its messages and pending proposals.",{deleting=false}){model.deleteConversation(conversation);selectedConversation="${deckId}_${newId()}";deleting=false}
 }
 @Composable private fun SessionScreen(session:StudySession?,state:FlashState,model:FlashViewModel,onExit:()->Unit,onSpeak:(String,String)->Unit) {
-    if(session==null){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()};return}
+    if(session==null){Column(Modifier.fillMaxSize().padding(24.dp),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){
+        Text(if(state.loading)"Loading saved sessions…"else"This session could not be loaded.")
+        if(state.loading)CircularProgressIndicator()
+        else Text("Return to your decks and start again. Your saved sessions remain in Review.")
+        TextButton(onExit){Text("Back to decks")}
+    };return}
+    val sessionSaving=session.id in state.savingSessions
     var answer by rememberSaveable(session.id,session.cursor){mutableStateOf("")}
     Column(Modifier.fillMaxSize().imePadding().padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment=Alignment.CenterVertically){IconButton(onExit){Icon(Icons.Default.Close,"Pause and exit session")};Text(session.title,modifier=Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);TextButton(onExit){Text("Save & exit")}}
         if(session.syncConflict)Text("This session is saved on this device. Another device changed its cloud copy.",color=MaterialTheme.colorScheme.error)
+        state.studyErrors[session.id]?.let{Text(it,color=MaterialTheme.colorScheme.error)}
+        Box(Modifier.fillMaxWidth().height(4.dp)){if(sessionSaving)LinearProgressIndicator(Modifier.fillMaxWidth())}
         val item=session.current
         if(session.finished||session.submitted) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -293,7 +329,7 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
                     }
                 }
             }
-            if(session.undoJson!=null)OutlinedButton({model.undo(session)},enabled=!state.busy){Text("Undo last rating")}
+            if(session.undoJson!=null)OutlinedButton({model.undo(session)},enabled=!sessionSaving){Text("Undo last rating")}
             Button(onExit,modifier=Modifier.fillMaxWidth()){Text("Done")}
         }else if(item!=null) {
             val completed=if(session.mode=="practice")session.completed.size else session.cursor
@@ -303,47 +339,53 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
                 Text(if(session.mode=="practice")"Flip, then choose confidence. Swipe left: Low · right: High."else"Tap to flip. Swipe to browse.",style=MaterialTheme.typography.bodySmall)
                 val context=LocalContext.current
                 val animationMs=if(android.provider.Settings.Global.getFloat(context.contentResolver,android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,1f)==0f)0 else 200
-                AnimatedContent(targetState=item,modifier=Modifier.weight(1f),transitionSpec={
-                    slideInHorizontally(tween(animationMs)){it} togetherWith slideOutHorizontally(tween(animationMs)){-it}
-                },label="Next card"){shown->key(shown.key){FlashCardFace(shown,if(shown.key==item.key)session.revealed else false,onFlip={if(!state.busy)model.reveal(session)},onSpeak=onSpeak,onSwipe={right->
-                    if(!state.busy){if(session.mode=="browse")model.advance(session,if(right)-1 else 1)else if(session.revealed)model.rate(session,if(right)"high"else"low")}
-                })}}
+                AnimatedContent(targetState=item,contentKey={it.key},modifier=Modifier.weight(1f).fillMaxWidth().clipToBounds(),transitionSpec={
+                    (slideInHorizontally(tween(animationMs)){it} togetherWith slideOutHorizontally(tween(animationMs)){-it}).using(null)
+                },label="Next card"){shown->key(shown.key){FlashCardFace(shown,if(shown.key==item.key)session.revealed else false,onFlip={if(!sessionSaving)model.reveal(session)},onSpeak=onSpeak,onSwipe={right->
+                    if(!sessionSaving){if(session.mode=="browse")model.advance(session,if(right)-1 else 1)else if(session.revealed)model.rate(session,if(right)"high"else"low")}
+                },enabled=shown.key==item.key&&!sessionSaving)}}
                 if(session.mode=="practice") {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         listOf("low" to "↻ Low","medium" to "≈ Medium","high" to "✓ High").forEach{(value,label)->
-                            FilledTonalButton({model.rate(session,value)},enabled=session.revealed&&!state.busy,modifier=Modifier.weight(1f).heightIn(min=52.dp),contentPadding=PaddingValues(8.dp)){Text(label)}
+                            FilledTonalButton({model.rate(session,value)},enabled=session.revealed&&!sessionSaving,modifier=Modifier.weight(1f).heightIn(min=52.dp),contentPadding=PaddingValues(8.dp)){Text(label)}
                         }
                     }
-                    TextButton({model.undo(session)},enabled=session.undoJson!=null&&!state.busy){Text("Undo last rating")}
-                }else Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){OutlinedButton({model.advance(session,-1)},enabled=session.cursor>0&&!state.busy){Text("Previous")};OutlinedButton({model.advance(session,1)},enabled=session.cursor<session.items.lastIndex&&!state.busy){Text("Next")}}
+                    TextButton({model.undo(session)},enabled=session.undoJson!=null&&!sessionSaving){Text("Undo last rating")}
+                }else Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){OutlinedButton({model.advance(session,-1)},enabled=session.cursor>0&&!sessionSaving){Text("Previous")};OutlinedButton({model.advance(session,1)},enabled=session.cursor<session.items.lastIndex&&!sessionSaving){Text("Next")}}
             }else {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                     Text(item.prompt,style=MaterialTheme.typography.headlineMedium)
                     TextButton({onSpeak(item.prompt,item.promptLanguage)}){Icon(Icons.AutoMirrored.Filled.VolumeUp,null);Text("Listen")}
                     val grade=session.grades[item.key]
-                    if(item.choices.isEmpty())OutlinedTextField(answer,{answer=it},label={Text("Your answer")},modifier=Modifier.fillMaxWidth(),enabled=grade==null&&!state.busy)
-                    else item.choices.forEach{choice->OutlinedButton({answer=choice},enabled=grade==null&&!state.busy,modifier=Modifier.fillMaxWidth()){if(answer==choice)Icon(Icons.Default.Check,null);Text(choice)}}
-                    if(grade==null)Button({model.answer(session,answer)},enabled=!state.busy&&(answer.isNotBlank()||session.mode=="test")){Text("Save answer")}
+                    if(item.choices.isEmpty())OutlinedTextField(answer,{answer=it},label={Text("Your answer")},modifier=Modifier.fillMaxWidth(),enabled=grade==null&&!sessionSaving)
+                    else item.choices.forEach{choice->OutlinedButton({answer=choice},enabled=grade==null&&!sessionSaving,modifier=Modifier.fillMaxWidth()){if(answer==choice)Icon(Icons.Default.Check,null);Text(choice)}}
+                    if(grade==null)Button({model.answer(session,answer)},enabled=!sessionSaving&&(answer.isNotBlank()||session.mode=="test")){Text("Save answer")}
                     else {
                         if(session.mode!="test"){Text("Expected: ${item.answer}");GradeFeedback(grade){model.overrideGrade(session,item.key,it)}}
                         else Text("Answer saved. Feedback appears after submission.")
-                        Button({model.advance(session)},enabled=!state.busy){Text(if(session.cursor==session.items.lastIndex)"Submit ${if(session.mode=="test")"test"else"session"}"else"Next question")}
+                        Button({model.advance(session)},enabled=!sessionSaving){Text(if(session.cursor==session.items.lastIndex)"Submit ${if(session.mode=="test")"test"else"session"}"else"Next question")}
                     }
                 }
             }
+        }else {
+            Text("This session has no current card. Exit and start a new session.",color=MaterialTheme.colorScheme.error)
+            Button(onExit){Text("Back to decks")}
         }
     }
 }
-@Composable fun FlashCardFace(item:StudyItem,revealed:Boolean,onFlip:()->Unit,onSpeak:(String,String)->Unit,onSwipe:(Boolean)->Unit) {
+@Composable fun FlashCardFace(item:StudyItem,revealed:Boolean,onFlip:()->Unit,onSpeak:(String,String)->Unit,onSwipe:(Boolean)->Unit,enabled:Boolean=true) {
     val context=LocalContext.current
     val reduced=android.provider.Settings.Global.getFloat(context.contentResolver,android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,1f)==0f
     val rotation by animateFloatAsState(if(revealed)180f else 0f,tween(if(reduced)0 else 220),label="Card flip")
-    var drag by remember{mutableFloatStateOf(0f)}
-    Card(onClick=onFlip,modifier=Modifier.fillMaxSize().heightIn(min=220.dp).graphicsLayer{rotationY=rotation;cameraDistance=16*density}
-        .pointerInput(item.key,revealed){detectHorizontalDragGestures(onDragStart={drag=0f},onHorizontalDrag={change,amount->change.consume();drag+=amount},onDragEnd={if(kotlin.math.abs(drag)>100)onSwipe(drag>0);drag=0f})}
-        .semantics{contentDescription=if(revealed)"Answer: ${item.answer}"else"Prompt: ${item.prompt}";onClick(label="Flip card"){onFlip();true}},
+    val swipe by rememberUpdatedState(onSwipe)
+    Card(onClick=onFlip,enabled=enabled,modifier=Modifier.fillMaxSize().graphicsLayer{rotationY=rotation;cameraDistance=16*density}
+        .pointerInput(item.key,enabled){
+            if(enabled){var drag=0f;val threshold=72.dp.toPx()
+                detectHorizontalDragGestures(onDragStart={drag=0f},onHorizontalDrag={change,amount->change.consume();drag+=amount},onDragCancel={drag=0f},onDragEnd={if(kotlin.math.abs(drag)>threshold)swipe(drag>0);drag=0f})}
+        }
+        .semantics{contentDescription=if(revealed)"Answer: ${item.answer}"else"Prompt: ${item.prompt}";onClick(label="Flip card"){if(enabled){onFlip();true}else false}},
         colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)) {
-        val back=rotation>90
+        val back by remember{derivedStateOf{rotation>90f}}
         Column(Modifier.fillMaxSize().graphicsLayer{rotationY=if(back)180f else 0f}.padding(24.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally) {
             Text(if(back)"Answer"else"Prompt",style=MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(20.dp));Text(if(back)item.answer else item.prompt,style=MaterialTheme.typography.headlineMedium)

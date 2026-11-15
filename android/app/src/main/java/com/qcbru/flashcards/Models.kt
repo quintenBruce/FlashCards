@@ -66,6 +66,10 @@ fun newId(): String = UUID.randomUUID().toString()
 )
 @Serializable data class Turn(val id: String = "", val conversationId: String = "", val user: String = "", val assistant: String = "", val proposalId: String? = null, val createdAt: Long = 0)
 @Serializable data class Conversation(val id: String, val deckId: String, val updatedAt: Long = 0, val deletedAt: Long? = null)
+@Serializable data class ChatRequest(
+    val id: String = newId(), val conversationId: String, val deckId: String, val message: String,
+    val state: String = "pending", val error: String = "", val createdAt: Long = System.currentTimeMillis(),
+)
 @Serializable data class ProposalOperation(val kind: String, val targetId: String, val expectedVersion: Int,
     val before: JsonObject? = null, val after: JsonObject? = null)
 @Serializable data class Proposal(val id: String, val deckId: String, val conversationId: String,

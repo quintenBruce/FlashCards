@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.util.Log
 import androidx.work.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.*
@@ -14,6 +15,9 @@ import com.qcbru.flashcards.storage.FlashDatabase
 import com.qcbru.flashcards.storage.StoredDocument
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -29,15 +33,29 @@ class FlashRepository(private val context: Context, val database: FlashDatabase)
     private val listeners = mutableListOf<ListenerRegistration>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val reviewMutex = Mutex()
+    private val syncFailures = MutableStateFlow<Map<String,String>>(emptyMap())
+    val syncErrors = syncFailures.asStateFlow()
     val dao get() = database.documents()
     val uid get() = auth.currentUser?.uid
     fun online(): Boolean {
         val manager = context.getSystemService(ConnectivityManager::class.java)
         return manager.getNetworkCapabilities(manager.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
     }
-    suspend fun call(name: String, value: Map<String, Any?> = emptyMap()): JsonObject {
+    suspend fun call(name: String, value: Map<String, Any?> = emptyMap(), timeoutSeconds: Long = 60): JsonObject {
         check(online()) { "Offline. Downloaded study and saved progress remain available." }
-        return functions.getHttpsCallable(name).withTimeout(540, TimeUnit.SECONDS).call(value).await().data.toJson().jsonObject
+        val reference = value["requestId"] as? String ?: "none"
+        val started = System.currentTimeMillis()
+        Log.i("FlashCardsRequest", "started operation=$name requestId=$reference")
+        try {
+            val result = withTimeout((timeoutSeconds+5)*1000) {
+                functions.getHttpsCallable(name).withTimeout(timeoutSeconds, TimeUnit.SECONDS).call(value).await().data.toJson().jsonObject
+            }
+            Log.i("FlashCardsRequest", "succeeded operation=$name requestId=$reference elapsedMs=${System.currentTimeMillis()-started}")
+            return result
+        } catch (error: Exception) {
+            Log.e("FlashCardsRequest", "failed operation=$name requestId=$reference code=${failureCode(error)} elapsedMs=${System.currentTimeMillis()-started}")
+            throw error
+        }
     }
     suspend fun initialize() {
         call("bootstrap")
@@ -55,9 +73,14 @@ class FlashRepository(private val context: Context, val database: FlashDatabase)
         stopListeners()
         for (kind in listOf("decks","progress","reminders","turns","proposals","usage","conversations")) {
             listeners += cloud.collection("users").document(user).collection(kind).addSnapshotListener { snapshot, error ->
-                if (error != null) { preferences.edit().putString("sync_error", "Cloud sync needs attention. Refresh or sign in again.").apply(); return@addSnapshotListener }
+                if (error != null) {
+                    Log.e("FlashCardsSync", "listener.failed collection=$kind code=${error.code}")
+                    syncFailures.update { it + (kind to "Cloud sync failed for $kind (${error.code}). Refresh or check Firebase permissions and App Check.") }
+                    return@addSnapshotListener
+                }
                 if (snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 scope.launch {
+                    try {
                     if (uid != user) return@launch
                     if (kind == "progress" && dao.list(user,"review_pending").isNotEmpty()) return@launch
                     database.runInTransaction {
@@ -68,11 +91,16 @@ class FlashRepository(private val context: Context, val database: FlashDatabase)
                     }
                     if (kind == "reminders") StudyAlerts.reschedule(context, user)
                     if (kind == "decks") SyncWorker.enqueue(context)
+                    syncFailures.update { it - kind }
+                    } catch (error: CancellationException) { throw error } catch (error: Exception) {
+                        Log.e("FlashCardsSync", "cache.failed collection=$kind code=${failureCode(error)}")
+                        syncFailures.update { it + (kind to "Downloaded $kind could not be saved. Refresh to retry.") }
+                    }
                 }
             }
         }
     }
-    fun stopListeners() { listeners.forEach { it.remove() }; listeners.clear() }
+    fun stopListeners() { listeners.forEach { it.remove() }; listeners.clear(); syncFailures.value=emptyMap() }
     suspend fun refresh() {
         val user = uid ?: return
         check(online()) { "You are offline" }
@@ -158,10 +186,14 @@ class FlashRepository(private val context: Context, val database: FlashDatabase)
         } } catch (e: Exception) { runCatching { download(deck.id) }; throw e }
         download(deck.id)
     }
-    suspend fun persistSession(session: StudySession) = withContext(Dispatchers.IO) {
-        val user = uid ?: return@withContext
+    suspend fun persistSession(session: StudySession): StudySession = withContext(Dispatchers.IO) {
+        val user = uid ?: error("Sign in before starting a session")
         database.runInTransaction { writeSession(user, session) }
+        val saved=dao.get(user,"sessions",session.id) ?: error("The session could not be saved on this device")
+        check(uid==user) { "Account changed while saving the session" }
+        Log.i("FlashCardsSession","saved sessionId=${session.id} revision=${session.revision}")
         SyncWorker.enqueue(context)
+        Codec.decodeFromString<StudySession>(saved.body)
     }
     private fun writeSession(user: String, session: StudySession) {
         val existing = dao.get(user,"sessions",session.id)?.let { Codec.decodeFromString<StudySession>(it.body) }
@@ -232,11 +264,57 @@ class FlashRepository(private val context: Context, val database: FlashDatabase)
         }
         SyncWorker.enqueue(context); next
     }
-    suspend fun sendMessage(deckId: String, conversationId: String, message: String) = call("sendDeckMessage",
-        mapOf("requestId" to newId(),"deckId" to deckId,"conversationId" to conversationId,"message" to message))
+    suspend fun saveChatRequest(user: String, request: ChatRequest) = withContext(Dispatchers.IO) {
+        if (uid == user) dao.put(StoredDocument(user,"chat_requests",request.id,Codec.encodeToString(request)))
+    }
+    suspend fun sendMessage(user: String, request: ChatRequest, recover: Boolean): ChatRequest {
+        require(request.message.isNotBlank() && request.message.length <= 8000) { "Enter a message of at most 8,000 characters." }
+        check(uid == user) { "Sign in again before sending." }
+        val payload = mapOf("requestId" to request.id,"deckId" to request.deckId,"conversationId" to request.conversationId,"message" to request.message)
+        val receipt = withTimeout(225_000) {
+            var result = if (recover) call("getChatRequest",mapOf("requestId" to request.id),30) else call("sendDeckMessage",payload,210)
+            if (result["state"]?.jsonPrimitive?.content == "not_found") result = call("sendDeckMessage",payload,210)
+            while (result["state"]?.jsonPrimitive?.content == "pending") {
+                delay(2500)
+                check(uid == user) { "Account changed." }
+                result = call("getChatRequest",mapOf("requestId" to request.id),30)
+            }
+            result
+        }
+        check(uid == user) { "Account changed." }
+        val status = receipt["state"]?.jsonPrimitive?.content
+        if (status == "succeeded") {
+            val turn = receipt["turn"]?.jsonObject ?: error("The server returned no saved response. Check request status.")
+            val proposal = receipt["proposal"] as? JsonObject
+            withContext(Dispatchers.IO) {
+                database.runInTransaction {
+                    if (uid == user) {
+                        // Keep receipts separately so a delayed cloud snapshot cannot erase them.
+                        dao.put(StoredDocument(user,"chat_turns",request.id,turn.toString()))
+                        if (proposal != null) dao.put(StoredDocument(user,"chat_proposals",proposal.getValue("id").jsonPrimitive.content,proposal.toString()))
+                        dao.put(StoredDocument(user,"conversations",request.conversationId,Codec.encodeToString(Conversation(request.conversationId,request.deckId,System.currentTimeMillis()))))
+                    }
+                }
+            }
+            return request.copy(state="succeeded",error="")
+        }
+        val failure = (receipt["error"] as? JsonObject)?.get("message")?.jsonPrimitive?.content
+        val code = (receipt["error"] as? JsonObject)?.get("code")?.jsonPrimitive?.content ?: status
+        Log.e("FlashCardsChat", "request.failed requestId=${request.id} code=$code")
+        return request.copy(state=if(status=="failed")"failed"else"uncertain",error=failure ?: "The request outcome is unknown. Check status to recover its response without sending a second AI request.")
+    }
     suspend fun confirm(proposal: Proposal, approve: Boolean) {
+        val user=uid ?: return
         call("confirmProposal",mapOf("proposalId" to proposal.id,"approve" to approve))
-        if (approve) runCatching { download(proposal.deckId) }
+        withContext(Dispatchers.IO) {
+            if(uid==user)dao.put(StoredDocument(user,"chat_proposals",proposal.id,Codec.encodeToString(proposal.copy(state=if(approve)"applied"else"rejected"))))
+        }
+        if (approve) {
+            try { download(proposal.deckId) } catch (error: CancellationException) { throw error } catch (error: Exception) {
+                Log.e("FlashCardsChat","approval.download.failed code=${failureCode(error)}")
+                throw IllegalStateException("Changes were approved, but the download failed. Refresh to download the saved deck.")
+            }
+        }
     }
     suspend fun saveReminder(reminder: StudyReminder) {
         call("upsertReminder",mapOf("requestId" to newId(),"id" to reminder.id,"expectedVersion" to reminder.version,"value" to Codec.encodeToJsonElement(reminder).toCloud()))
@@ -244,7 +322,15 @@ class FlashRepository(private val context: Context, val database: FlashDatabase)
     suspend fun deleteReminder(reminder: StudyReminder) {
         call("applyReminderAction", mapOf("requestId" to newId(),"id" to reminder.id,"expectedVersion" to reminder.version,"action" to "delete"))
     }
-    suspend fun deleteConversation(conversationId: String) { call("deleteConversation",mapOf("id" to conversationId)) }
+    suspend fun deleteConversation(conversationId: String) {
+        val user=uid ?: return
+        call("deleteConversation",mapOf("id" to conversationId))
+        withContext(Dispatchers.IO) {
+            if(uid==user)for(kind in listOf("chat_requests","chat_turns","chat_proposals"))for(row in dao.list(user,kind)) {
+                if(Codec.parseToJsonElement(row.body).jsonObject["conversationId"]?.jsonPrimitive?.content==conversationId)dao.remove(user,kind,row.id)
+            }
+        }
+    }
     suspend fun registerDevice() {
         if (uid == null || !online()) return
         val device = preferences.getString("device_id",null) ?: newId().also { preferences.edit().putString("device_id",it).apply() }
