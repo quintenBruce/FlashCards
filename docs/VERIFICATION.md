@@ -133,3 +133,15 @@ Remaining work from the design/audit
 Deck-wide actions now live in the top app bar beside the deck title: Ask AI, card trash, study options, edit, archive and trash. The library menu already occupies the header. Card-specific actions stay on their individual rows. Menu state resets when the destination changes, and deck deletion retains its confirmation and returns to the library only after success.
 
 Kotlin compilation and git diff --check passed. No additional unit tests were added for this control-placement change. Device rendering remains unverified.
+
+## Study controls and Expressive theme — November 15, 2026
+
+- One unfinished study session occupies each included deck. Completed/submitted sessions remain in history and free their decks. Combined reviews occupy every included deck.
+- Starting from the deck, custom study setup or a reminder resumes an overlapping unfinished session. Room resolves concurrent local starts in a transaction. When resuming legacy duplicates, the newest session is retained and older overlapping sessions are preserved as replaced history.
+- The saveStudySession callable claims per-deck activeStudies slots transactionally and rejects another unfinished session, including concurrent starts. This backend change needs deployment for cross-device enforcement.
+- Study/Resume study, Add card and Ask AI are action chips in a pinned, horizontally scrollable row above the card list. Less-used deck actions stay in the header overflow.
+- Removed Show answer, visible Prompt/Answer headings, the confidence/swipe instructions and Tap to flip footer. Tapping the card remains the flip action and accessible flip semantics remain.
+- Enabled MaterialExpressiveTheme and MotionScheme.expressive(). Kept the existing teal palette. Material 3 was upgraded from 1.4.0 to 1.5.0-rc01 because 1.4 hides the Expressive APIs.
+- API choice verified against https://developer.android.com/jetpack/androidx/releases/compose-material3 and https://developer.android.com/reference/kotlin/androidx/compose/material3/package-summary .
+- 19 Android unit tests and 32 shared/backend tests passed. Functions compilation and the debug APK build passed. The first Android attempt identified the unavailable Expressive APIs in Material 3 1.4; the dependency update resolved it.
+- No phone installation, app launch or Firebase deployment was performed in this pass. Device layout and TalkBack behavior remain unverified.

@@ -127,6 +127,10 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
     fun import(deck: Deck, cards: List<FlashCard>, done: () -> Unit) = action { repository.importCards(deck,cards); done() }
     fun startSession(deckIds: Set<String>, filter: String, direction: String, shuffle: Boolean, mode: String, count: Int, done: (String) -> Unit) = action {
         val selected=state.value.decks.filter{(deckIds.isEmpty()||it.id in deckIds)&&!it.archived&&it.deletedAt==null&&!it.purgeRequested}
+        resumableStudy(state.value.sessions,selected.map{it.id}.toSet())?.let{existing->
+            val resumed=repository.startOrResumeSession(existing)
+            done(resumed.id);return@action
+        }
         selected.forEach{repository.prepareDeck(it.id)}
         val user=repository.uid ?: error("Sign in to study")
         val rows=withContext(Dispatchers.IO){repository.dao.list(user,"cards")}
@@ -136,7 +140,7 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
         val session = withContext(Dispatchers.Default) { StudyEngine.create(decks,s.cards,s.progress,filter,direction,shuffle,mode,count) }
         check(session.items.isNotEmpty()) { "No cards match these filters. Try All or another direction." }
         check(Codec.encodeToString(session).toByteArray().size <= 650000) { "Select fewer cards for this session" }
-        val saved=repository.persistSession(session)
+        val saved=repository.startOrResumeSession(session)
         mutable.update { it.copy(sessions=it.sessions.filterNot{existing->existing.id==saved.id}+saved) }
         Log.i("FlashCardsSession","opening sessionId=${saved.id}")
         done(saved.id)

@@ -89,7 +89,6 @@ import java.time.format.DateTimeFormatter
                         }
                     }
                     currentDeck?.let { deck ->
-                        DropdownMenuItem(text={Text("Ask AI about this deck")},onClick={menu=false;stack.add(ChatRoute(deck.id))})
                         DropdownMenuItem(text={Text(if(deckTrash)"Show active cards"else"Card trash")},onClick={menu=false;deckTrash=!deckTrash})
                         DropdownMenuItem(text={Text("Study options")},onClick={menu=false;setupDecks=deck.id;setupFilter="all"},enabled=!deck.archived)
                         DropdownMenuItem(text={Text("Edit deck")},onClick={menu=false;editDeckId=deck.id},enabled=state.online&&!state.busy)
@@ -115,11 +114,9 @@ import java.time.format.DateTimeFormatter
                                 "Archived decks" -> DecksScreen(latest,onDeck={stack.add(DeckRoute(it))},archived=true)
                                 else -> SettingsScreen(latest,model,onVoices)
                             }
-                            is DeckRoute -> DeckScreen(key,latest,model,trash=deckTrash,
+                            is DeckRoute -> DeckScreen(key,latest,model,trash=deckTrash,onChat={stack.add(ChatRoute(key.id))},
                                 onStudy={
-                                    val paused=latest.sessions.firstOrNull{!it.finished&&(it.deckIds.ifEmpty{it.items.map{item->item.card.deckId}.distinct()})==listOf(key.id)}
-                                    if(paused!=null)stack.add(SessionRoute(paused.id))
-                                    else model.startSession(setOf(key.id),"all","term",true,"practice",20){if(stack.lastOrNull()==key)stack.add(SessionRoute(it))}
+                                    model.startSession(setOf(key.id),"all","term",true,"practice",20){if(stack.lastOrNull()==key)stack.add(SessionRoute(it))}
                                 },
                                 )
                             is ChatRoute -> ChatScreen(key.id,latest,model,onDeleted={if(stack.lastOrNull()==key){stack.removeLastOrNull();if(stack.lastOrNull() is DeckRoute)stack.removeLastOrNull()}},onCreated={
@@ -207,7 +204,7 @@ import java.time.format.DateTimeFormatter
         items(state.sessions,key={it.id}){s->ListItem(headlineContent={Text(s.title)},supportingContent={Text("${s.mode} · ${if(s.finished)"Complete"else"Paused"}${if(s.syncConflict)" · saved on this device; cloud conflict"else""}")},trailingContent={TextButton({onResume(s.id)}){Text(if(s.finished)"View"else"Resume")}})}
     }
 }
-@Composable private fun DeckScreen(route:DeckRoute,state:FlashState,model:FlashViewModel,trash:Boolean,onStudy:()->Unit) {
+@Composable private fun DeckScreen(route:DeckRoute,state:FlashState,model:FlashViewModel,trash:Boolean,onChat:()->Unit,onStudy:()->Unit) {
 
     var search by rememberSaveable(route.id){mutableStateOf("")}
     val deck=state.decks.find{it.id==route.id}
@@ -224,11 +221,18 @@ import java.time.format.DateTimeFormatter
         try {model.repository.prepareDeck(route.id)} catch(e:Exception){error=operationError(e)} finally{loading=false}
     }
     val cards=state.cards.filter{it.deckId==route.id&&(it.deletedAt!=null)==trash&&!it.purgeRequested&&(it.term.contains(search,true)||it.definition.contains(search,true))}.sortedBy{it.order}
-    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            if(deck!=null&&!deck.archived) Button(onStudy,enabled=cards.isNotEmpty()){Text(if(state.sessions.any{!it.finished&&(it.deckIds.ifEmpty{it.items.map{item->item.card.deckId}.distinct()})==listOf(route.id)})"Resume study"else"Study")}
-            OutlinedButton({editorJson=Codec.encodeToString(FlashCard.serializer(),FlashCard(deckId=route.id,order=(cards.maxOfOrNull{it.order}?:0)+1000))},enabled=deck!=null&&state.online){Text("Add card")}
-        }}
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=16.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            if(deck!=null&&!deck.archived) AssistChip(
+                onClick=onStudy,
+                enabled=resumableStudy(state.sessions,setOf(route.id))!=null||cards.isNotEmpty(),
+                label={Text(if(resumableStudy(state.sessions,setOf(route.id))!=null)"Resume study"else"Study")},
+                leadingIcon={Icon(Icons.Default.School,null,Modifier.size(18.dp))})
+            AssistChip(onClick={editorJson=Codec.encodeToString(FlashCard.serializer(),FlashCard(deckId=route.id,order=(cards.maxOfOrNull{it.order}?:0)+1000))},
+                enabled=deck!=null&&state.online,label={Text("Add card")},leadingIcon={Icon(Icons.Default.Add,null,Modifier.size(18.dp))})
+            AssistChip(onClick=onChat,enabled=deck!=null,label={Text("Ask AI")},leadingIcon={Icon(Icons.Default.ChatBubbleOutline,null,Modifier.size(18.dp))})
+        }
+        LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item{OutlinedTextField(search,{search=it},label={Text("Find a card")},modifier=Modifier.fillMaxWidth(),singleLine=true)}
         if(loading&&cards.isEmpty())item{CircularProgressIndicator()}
         if(error.isNotBlank())item{Text(error);TextButton({error="";retry++}){Text("Retry")}}
@@ -246,6 +250,7 @@ import java.time.format.DateTimeFormatter
             }})
             HorizontalDivider()
         }
+    }
     }
     deleteTarget?.let{card->ConfirmDialog("Move card to trash?","You can restore this card from Card trash.",{deleteTarget=null}){deleteTarget=null;model.contentAction("cards",card.id,card.version,"trash")}}
     editor?.let{draft->CardEditor(draft,state.busy,onDismiss={editorJson=null},onSave={model.saveCard(it){editorJson=null}})}
@@ -333,7 +338,7 @@ import java.time.format.DateTimeFormatter
         val item=session.current
         if(session.finished||session.submitted) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                Heading("Session complete",if(session.mode=="practice")"Every selected card reached High. Come back whenever you’re ready."else"Review your answers below.")
+                Heading(if(session.supersededBy!=null)"Session replaced"else"Session complete",if(session.supersededBy!=null)"Your newer session is available from the deck."else if(session.mode=="practice")"Every selected card reached High. Come back whenever you’re ready."else"Review your answers below.")
                 if(session.mode=="browse")Text("${session.items.size} cards reviewed")
                 else if(session.mode=="practice")Text("${session.completed.size} directional cards completed")
                 else {
@@ -354,7 +359,6 @@ import java.time.format.DateTimeFormatter
             Text("${completed} / ${session.items.size} complete · ${session.mode}",style=MaterialTheme.typography.labelLarge)
             LinearProgressIndicator(progress={completed.toFloat()/session.items.size.coerceAtLeast(1)},modifier=Modifier.fillMaxWidth())
             if(session.mode in listOf("practice","browse")) {
-                Text(if(session.mode=="practice")"Flip, then choose confidence. Swipe left: Low · right: High."else"Tap to flip. Swipe to browse.",style=MaterialTheme.typography.bodySmall)
                 val context=LocalContext.current
                 val animationMs=if(android.provider.Settings.Global.getFloat(context.contentResolver,android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,1f)==0f)0 else 200
                 AnimatedContent(targetState=item,contentKey={it.key},modifier=Modifier.weight(1f).fillMaxWidth().clipToBounds(),transitionSpec={
@@ -362,7 +366,6 @@ import java.time.format.DateTimeFormatter
                 },label="Next card"){shown->key(shown.key){FlashCardFace(shown,if(shown.key==item.key)session.revealed else false,onFlip={if(!sessionSaving)model.reveal(session)},onSpeak=onSpeak,onSwipe={right->
                     if(!sessionSaving){if(session.mode=="browse")model.advance(session,if(right)-1 else 1)else if(session.revealed)model.rate(session,if(right)"high"else"low")}
                 },enabled=shown.key==item.key&&!sessionSaving)}}
-                if(session.mode=="practice"&&!session.revealed)Button({model.reveal(session)},enabled=!sessionSaving,modifier=Modifier.fillMaxWidth()){Text("Show answer")}
                 if(session.mode=="practice"&&session.revealed) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         listOf("low" to "↻ Low","medium" to "≈ Medium","high" to "✓ High").forEach{(value,label)->
@@ -406,12 +409,10 @@ import java.time.format.DateTimeFormatter
         colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)) {
         val back by remember{derivedStateOf{rotation>90f}}
         Column(Modifier.fillMaxSize().graphicsLayer{rotationY=if(back)180f else 0f}.padding(24.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally) {
-            Text(if(back)"Answer"else"Prompt",style=MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(20.dp));Text(if(back)item.answer else item.prompt,style=MaterialTheme.typography.headlineMedium)
             if(back&&item.card.example.isNotBlank())Text(item.card.example,Modifier.padding(top=16.dp))
             if(back&&item.card.explanation.isNotBlank())Text(item.card.explanation,Modifier.padding(top=12.dp),style=MaterialTheme.typography.bodyMedium)
             TextButton({onSpeak(if(back)item.answer else item.prompt,if(back)item.answerLanguage else item.promptLanguage)}){Icon(Icons.AutoMirrored.Filled.VolumeUp,"Play visible side");Text("Listen")}
-            Text("Tap to flip",style=MaterialTheme.typography.bodySmall)
         }
     }
 }

@@ -34,7 +34,7 @@ vi.mock('../src/core', () => ({
 }));
 import { approve } from '../src/ai';
 import { mutate } from '../src/content';
-import { syncReview } from '../src/study';
+import { syncReview, saveSession } from '../src/study';
 import { reserve, settle, releaseRejected } from '../src/usage';
 import { budgetMonth } from '../../shared/src/schedule';
 
@@ -111,5 +111,29 @@ describe('budget reservations', () => {
     await expect(reserve('me','a','gpt-6.1-sol','',100)).rejects.toHaveProperty('code','already-exists');
     await settle('me','a','gpt-6.1-sol',100,10);await settle('me','a','gpt-6.1-sol',100,10);
     expect(memory.records.get(`users/me/usage/${budgetMonth(Date.now())}`)).toMatchObject({spent:300,reserved:0});
+  });
+});
+
+describe('one active study per deck', () => {
+  const value = { deckIds:['deck'], items:[], finished:false, submitted:false };
+  const save = (key:string, session:any=value, expectedVersion=0) =>
+    saveSession('me',{id:key,requestId:key+'_'+expectedVersion,expectedVersion,session});
+  it('rejects a second unfinished session', async () => {
+    await save('first');
+    await expect(save('second')).rejects.toHaveProperty('code','failed-precondition');
+    expect(memory.records.has('users/me/sessions/second')).toBe(false);
+  });
+  it('allows another session after completion', async () => {
+    await save('first');
+    await save('first',{...value,finished:true},1);
+    await expect(save('second')).resolves.toMatchObject({version:1});
+  });
+  it('serializes simultaneous starts', async () => {
+    const results=await Promise.allSettled([save('first'),save('second')]);
+    expect(results.filter(result=>result.status==='fulfilled')).toHaveLength(1);
+  });
+  it('combined sessions occupy all included decks', async () => {
+    await save('combined',{...value,deckIds:['deck','other']});
+    await expect(save('other',{...value,deckIds:['other']})).rejects.toHaveProperty('code','failed-precondition');
   });
 });

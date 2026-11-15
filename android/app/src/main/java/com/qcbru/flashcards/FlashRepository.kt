@@ -220,6 +220,22 @@ class FlashRepository(private val context: Context, val database: FlashDatabase)
         } } catch (e: Exception) { runCatching { download(deck.id) }; throw e }
         refreshSavedDeck(deck.id)
     }
+    suspend fun startOrResumeSession(session:StudySession):StudySession = withContext(Dispatchers.IO) {
+        val user=uid ?: error("Sign in to study")
+        var selected=session
+        database.runInTransaction {
+            val sessions=dao.list(user,"sessions").map{Codec.decodeFromString<StudySession>(it.body)}
+            val existing=resumableStudy(sessions,session.studyDeckIds())
+            if(existing!=null) selected=existing
+            else writeSession(user,session)
+            sessions.filter{it.id!=selected.id&&!it.finished&&!it.submitted&&it.studyDeckIds().any{deck->deck in selected.studyDeckIds()}}.forEach{duplicate->
+                writeSession(user,duplicate.copy(finished=true,supersededBy=selected.id,revision=duplicate.revision+1))
+            }
+        }
+        check(uid==user){"Account changed while opening study"}
+        SyncWorker.enqueue(context)
+        selected
+    }
     suspend fun persistSession(session: StudySession): StudySession = withContext(Dispatchers.IO) {
         val user = uid ?: error("Sign in before starting a session")
         database.runInTransaction { writeSession(user, session) }

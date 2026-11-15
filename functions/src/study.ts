@@ -41,6 +41,20 @@ export async function saveSession(uid: string, data: Record<string, any>) {
     const [prior, current] = await Promise.all([tx.get(receipt), tx.get(ref)]);
     sameRequest(prior, fingerprint); if (prior.exists) return prior.get('result');
     if ((current.get('version') || 0) !== integer(data.expectedVersion ?? 0)) throw new HttpsError('failed-precondition', 'Session changed on another device');
+    const deckIds = [...new Set<string>((Array.isArray(value.deckIds) && value.deckIds.length
+      ? value.deckIds : (value.items ?? []).map((item: any) => item.card?.deckId)).map(id))];
+    const slots = deckIds.map(deckId => root(uid).collection('activeStudies').doc(deckId));
+    const claims = await Promise.all(slots.map(slot => tx.get(slot)));
+    const owners = await Promise.all(claims.map(claim => claim.exists && claim.get('sessionId') !== sessionId
+      ? tx.get(root(uid).collection('sessions').doc(claim.get('sessionId'))) : Promise.resolve(null)));
+    const active = value.finished !== true && value.submitted !== true;
+    if (active && owners.some(owner => owner?.exists && owner.get('value')?.finished !== true && owner.get('value')?.submitted !== true)) {
+      throw new HttpsError('failed-precondition', 'A study session is already active for this deck. Resume it from study history.');
+    }
+    slots.forEach((slot, index) => {
+      if (active) tx.set(slot, { sessionId });
+      else if (claims[index].get('sessionId') === sessionId) tx.delete(slot);
+    });
     const result = { id: sessionId, version: (current.get('version') || 0) + 1 };
     tx.set(ref, { id: sessionId, value, version: result.version, updatedAt: Date.now() });
     tx.create(receipt, { fingerprint, result, createdAt: Date.now() }); return result;

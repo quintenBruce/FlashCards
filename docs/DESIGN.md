@@ -126,3 +126,11 @@ Report observed results separately from proposed designs. Do not present a sourc
 - While the response is pending, show an assistant bubble with three dots and an accessible “AI is replying” label. Failures retain their recovery controls.
 - The server claims a user-scoped active creation slot transactionally before any provider call. A second creation conversation is rejected until the first is discarded or its deck is saved. Approval checks the conversation tombstone, so discarded proposals cannot mutate cards.
 - Android changes require an updated APK. Cross-device enforcement and discarded-proposal checks require deployment of the changed sendDeckMessage and confirmProposal functions to flashcards-6b1ac.
+
+## Pinned deck actions and study lifecycle
+
+Use action chips for Study/Resume study, Add card and Ask AI. Keep this row outside the scrolling card list. Place study customization, card trash, editing, archive and deck trash in the header menu. Chips invoke actions and do not retain selected/filter state.
+
+Each deck may belong to one unfinished session. Resume preserves its mode, settings, queue and answers. Combined reviews hold all included decks until finished. Completed sessions stay in history. Legacy duplicates are consolidated on resume, keeping older snapshots as replaced history.
+
+Use Material 3 Expressive theming with expressive motion. Study faces show their learning content directly, without visible Prompt/Answer headings, flip instructions or a separate Show answer button. Retain accessible action labels.

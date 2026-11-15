@@ -45,7 +45,7 @@ fun newId(): String = UUID.randomUUID().toString()
     val cursor: Int = 0, val revealed: Boolean = false, val submitted: Boolean = false, val finished: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(), val updatedAt: Long = System.currentTimeMillis(),
     val revision: Int = 0, val serverVersion: Int = 0, val undoJson: String? = null,
-    val undoEventId: String? = null, val undoProgress: Progress? = null, val syncConflict: Boolean = false,
+    val undoEventId: String? = null, val undoProgress: Progress? = null, val syncConflict: Boolean = false, val supersededBy: String? = null,
 ) {
     val current get() = if (mode == "practice") items.find { it.key == queue.firstOrNull() } else items.getOrNull(cursor)
 }
@@ -151,3 +151,11 @@ fun creationDraftId(decks:List<Deck>, conversations:List<Conversation>, requests
 
 fun requestNeedsRecovery(request:ChatRequest, turns:List<Turn>):Boolean =
     request.state in listOf("pending","uncertain") && turns.none{it.id==request.id}
+
+fun StudySession.studyDeckIds():Set<String> =
+    deckIds.ifEmpty{items.map{it.card.deckId}}.toSet()
+
+/** Combined study also occupies each included deck until completion. */
+fun resumableStudy(sessions:List<StudySession>, deckIds:Set<String>):StudySession? =
+    sessions.filter{!it.finished&&!it.submitted&&it.studyDeckIds().any{deck->deck in deckIds}}
+        .maxWithOrNull(compareBy<StudySession>{it.updatedAt}.thenBy{it.id})

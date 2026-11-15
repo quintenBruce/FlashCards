@@ -23,7 +23,7 @@ private val Dark = darkColorScheme(primary=Color(0xFFA8D9CE),onPrimary=Color(0xF
 @Composable fun FlashTheme(theme: String, content: @Composable () -> Unit) {
     val dark = theme == "dark" || theme == "system" && isSystemInDarkTheme()
     val type = Typography()
-    MaterialTheme(colorScheme=if(dark) Dark else Light,
+    MaterialExpressiveTheme(motionScheme=MotionScheme.expressive(),colorScheme=if(dark) Dark else Light,
         shapes=Shapes(small=RoundedCornerShape(12.dp),medium=RoundedCornerShape(18.dp),large=RoundedCornerShape(26.dp)),
         typography=type.copy(headlineMedium=type.headlineMedium.copy(fontWeight=FontWeight.SemiBold),titleLarge=type.titleLarge.copy(fontWeight=FontWeight.SemiBold)), content=content)
 }
