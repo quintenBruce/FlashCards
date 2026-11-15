@@ -19,9 +19,10 @@ The sketches show visual order. Brackets denote controls. Sample content and cou
 ~~~
 LIBRARY                          CREATION SHEET
 Your decks                 [⋮]    ─────
-[ Search decks             × ]    Add a deck
+[ Search decks             × ]
                                  [ Create manually             › ]
 Travel Spanish                   [ Create with AI              › ]
+Phrases for trains and cafés.
 42 cards
 ─────────────────────────────
 Words from class
@@ -29,9 +30,9 @@ Words from class
                   [+ Add deck]
 ~~~
 
-**Library.** Use one app-bar title, a search field and a flat LazyColumn. The entire row opens a deck. Give the title visual priority and show a reliable card count as secondary text when available. Allow a two-line title. Keep the selected search query on return. Anchor a labeled extended Add deck button at the lower trailing edge of the content column and reserve space below the last row so the button cannot cover it. The app-bar overflow contains Study history, Reminders, Archived decks and Settings. Keep the overflow in the same place when the list is empty. Show “No decks yet” for a genuinely empty library. For a search miss, show “No decks match ‘travel’” and Clear search. Reuse the existing Add button in both states.
+**Library.** Keep search above a grid of tappable deck cards, newest updates first. A phone shows one column and a wide window fits two. Each card gives the title and optional description up to two lines each, with ellipses for overflow. Show the active card count when it is available locally. Search matches both fields and offers a clear action in the field. Anchor Add deck at the lower trailing edge of the content column. Keep Study history, Reminders and Settings in the app-bar overflow.
 
-**Creation sheet.** Use ModalBottomSheet with a drag handle, title and two full-width rows. The whole row is a single target. Opening the sheet from search dismisses the search keyboard while preserving the query. Either selection closes the sheet and opens one destination. Back or an outside tap restores focus to Add deck. At large font sizes both row labels wrap. No selection is preselected or submitted on dismissal.
+**Creation sheet.** Use a drag handle and two full-width Material 3 Expressive buttons. Each button has a 64 dp minimum height and can grow with its label. Either selection closes the sheet and continues the chosen creation flow.
 
 ~~~
 CREATE WITH AI                   CREATED DECK

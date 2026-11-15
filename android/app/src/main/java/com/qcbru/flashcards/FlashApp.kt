@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 package com.qcbru.flashcards
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -107,8 +107,14 @@ import java.time.format.DateTimeFormatter
                     }
                 }
             }})},
-        floatingActionButton={if(state.uid!=null && current is HomeRoute) ExtendedFloatingActionButton(
-            onClick={addSheet=true},icon={Icon(Icons.Default.Add,null)},text={Text("Add deck")})}
+        floatingActionButtonPosition=FabPosition.Center,
+        floatingActionButton={
+            if(state.uid!=null && current is HomeRoute) {
+                Box(Modifier.widthIn(max=760.dp).fillMaxWidth().padding(horizontal=16.dp), contentAlignment=Alignment.CenterEnd) {
+                    ExtendedFloatingActionButton(onClick={addSheet=true},icon={Icon(Icons.Default.Add,null)},text={Text("Add deck")})
+                }
+            }
+        }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),contentAlignment=Alignment.TopCenter) {
             Box(Modifier.widthIn(max=760.dp).fillMaxSize()) {
@@ -162,8 +168,22 @@ import java.time.format.DateTimeFormatter
     if(addSheet) ModalBottomSheet(onDismissRequest={addSheet=false}) {
         Column(Modifier.fillMaxWidth().padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
 
-            Button({addSheet=false;newDeck=true},Modifier.fillMaxWidth().heightIn(min=64.dp)){Text("Create manually")}
-            Button({addSheet=false;model.inspectCreation{exists->if(exists)draftPrompt=true else model.openCreation(false){stack.add(ChatRoute(it,true))}}},Modifier.fillMaxWidth().heightIn(min=64.dp),enabled=!state.busy){Text("Create with AI")}
+            val height = 64.dp
+            val buttonModifier = Modifier.fillMaxWidth().heightIn(min=height)
+            val shapes = ButtonDefaults.shapesFor(height)
+            val labelStyle = ButtonDefaults.textStyleFor(height)
+            Button({addSheet=false;newDeck=true}, modifier=buttonModifier, shapes=shapes) {
+                Text("Create manually", style=labelStyle)
+            }
+            Button(
+                onClick={
+                    addSheet=false
+                    model.inspectCreation { exists ->
+                        if(exists) draftPrompt=true else model.openCreation(false){stack.add(ChatRoute(it,true))}
+                    }
+                },
+                modifier=buttonModifier, shapes=shapes, enabled=!state.busy
+            ) { Text("Create with AI", style=labelStyle) }
         }
     }
     if(draftPrompt) AlertDialog(onDismissRequest={draftPrompt=false},title={Text("Continue your draft?")},text={Text("Resume your AI deck or discard it and start fresh.")},confirmButton={TextButton({draftPrompt=false;model.openCreation(false){stack.add(ChatRoute(it,true))}}){Text("Resume draft")}},dismissButton={TextButton({draftPrompt=false;model.openCreation(true){stack.add(ChatRoute(it,true))}}){Text("Start fresh")}})
@@ -193,23 +213,6 @@ import java.time.format.DateTimeFormatter
 }
 @Composable private fun Empty(title:String,body:String) {
     Column(Modifier.fillMaxWidth().padding(vertical=24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {Text(title,style=MaterialTheme.typography.titleLarge);Text(body,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-}
-@Composable internal fun DecksScreen(state:FlashState,onDeck:(String)->Unit) {
-    var search by rememberSaveable { mutableStateOf("") }
-    val decks=state.decks.filter{it.deletedAt==null&&!it.purgeRequested&&it.title.contains(search,true)}.sortedByDescending{it.updatedAt}
-    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(start=16.dp,end=16.dp,top=12.dp,bottom=96.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        item{OutlinedTextField(search,{search=it},label={Text("Search decks")},singleLine=true,modifier=Modifier.fillMaxWidth())}
-        if(state.loading)item{CircularProgressIndicator()}
-        else if(decks.isEmpty())item{
-            Empty(if(search.isBlank())"No decks yet"else"No matching decks",if(search.isBlank())"Add a deck to get started."else"Try another title.")
-            if(search.isNotBlank())TextButton({search=""}){Text("Clear search")}
-        }
-        items(decks,key={it.id}){deck->
-            ListItem(modifier=Modifier.clickable{onDeck(deck.id)},headlineContent={Text(deck.title,maxLines=2)},
-                supportingContent={if(deck.downloaded)Text("${state.cards.count{it.deckId==deck.id&&it.deletedAt==null&&!it.purgeRequested}} cards")})
-            HorizontalDivider()
-        }
-    }
 }
 @Composable private fun ReviewScreen(state:FlashState,onStudy:(Set<String>,String)->Unit,onResume:(String)->Unit) {
     var selected by rememberSaveable{mutableStateOf(listOf<String>())}

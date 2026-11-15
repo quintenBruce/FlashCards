@@ -25,12 +25,15 @@ private fun sample()=StudyItem("example_term",FlashCard(term="I miss you",defini
 
 @Preview(name="Library",widthDp=360,heightDp=640,showBackground=true)
 @Preview(name="Library large text",widthDp=360,heightDp=640,fontScale=2f,showBackground=true)
+@Preview(name="Wide library",widthDp=760,heightDp=640,showBackground=true)
 @Composable private fun LibraryPreview() {
     FlashTheme("light") {
         DecksScreen(FlashState(decks=listOf(
-            Deck(id="travel",title="Travel Spanish",downloaded=true),
-            Deck(id="class",title="Words from this week's class",downloaded=true)
-        )),onDeck={})
+            Deck(id="travel",title="Travel Spanish",description="Order a meal, ask for directions and buy a train ticket.",downloaded=true),
+            Deck(id="class",title="Words from this week's class on the past tense",
+                description="Practice the verbs from Tuesday's lesson by telling a story about a place you visited and the people you met along the way."),
+            Deck(id="plants",title="Local wildflowers")
+        ),cards=listOf(FlashCard(deckId="travel"))),onDeck={})
     }
 }
 
