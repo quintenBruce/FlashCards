@@ -135,7 +135,7 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
         .let {if(sort=="Name")it.sortedBy{d->d.title.lowercase()}else it.sortedByDescending{d->d.updatedAt}}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
         item{Heading("Your decks","A little practice, a lasting difference.")}
-        item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onCreate,enabled=state.online&&!state.busy){Icon(Icons.Default.Add,null);Text("New deck")};OutlinedButton(onAI,enabled=state.online&&!state.busy){Text("Create with AI")}}}
+        item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onCreate){Icon(Icons.Default.Add,null);Text("New deck")};OutlinedButton(onAI){Text("Create with AI")}}}
         item{OutlinedTextField(search,{search=it},label={Text("Search decks")},modifier=Modifier.fillMaxWidth(),singleLine=true)}
         item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){FilterChip(sort=="Name",{sort=if(sort=="Name")"Recent"else"Name"},label={Text("Sort: $sort")});FilterChip(archived,{archived=!archived},label={Text("Archived")})}}
         val unfinished=state.sessions.firstOrNull{!it.finished}
@@ -266,7 +266,7 @@ private fun tabIcon(name: String)=when(name) { "Decks"->Icons.Default.Style;"Rev
         }
         Row(Modifier.padding(12.dp),verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(draft,{draft=it},label={Text("Ask about this deck")},modifier=Modifier.weight(1f),maxLines=5,enabled=!state.busy)
-            Button({model.sendMessage(deckId,conversation,draft){draft=""}},enabled=state.online&&!state.busy&&draft.isNotBlank()){Text("Send")}
+            Button({model.sendMessage(deckId,conversation,draft){draft=""}},enabled=state.online&&!state.chatPending&&draft.isNotBlank()){Text("Send")}
         }
     }
     if(deleting)ConfirmDialog("Delete conversation?","This removes its messages and pending proposals.",{deleting=false}){model.deleteConversation(conversation);conversation="${deckId}_${newId()}";deleting=false}

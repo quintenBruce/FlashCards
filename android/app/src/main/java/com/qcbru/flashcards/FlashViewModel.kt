@@ -128,17 +128,20 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
         val old = session.grades[key] ?: return@action
         repository.persistSession(session.copy(grades = session.grades+(key to old.copy(verdict = verdict,explanation = "Grade corrected by you",manual = true)),revision = session.revision+1))
     }
-    fun sendMessage(deckId: String, conversationId: String, message: String, done: () -> Unit) = action {
+    fun sendMessage(deckId: String, conversationId: String, message: String, done: () -> Unit) {
+        if (state.value.chatPending) return
         mutable.update { it.copy(chatConversationId = conversationId,chatPending = true,chatReply = "",chatProposalPending = false,chatError = "") }
-        try {
-            val result = repository.sendMessage(deckId,conversationId,message)
-            mutable.update { it.copy(chatReply = result["reply"]?.jsonPrimitive?.content.orEmpty(),
-                chatProposalPending = result["proposalId"]?.toString() != null && result["proposalId"]?.toString() != "null") }
-            done()
-        } catch (error: Exception) {
-            mutable.update { it.copy(chatError = error.localizedMessage ?: "Could not send your message. Try again.") }
-        } finally {
-            mutable.update { it.copy(chatPending = false) }
+        viewModelScope.launch {
+            try {
+                val result = repository.sendMessage(deckId,conversationId,message)
+                mutable.update { it.copy(chatReply = result["reply"]?.jsonPrimitive?.content.orEmpty(),
+                    chatProposalPending = result["proposalId"]?.toString() != null && result["proposalId"]?.toString() != "null") }
+                done()
+            } catch (error: Exception) {
+                mutable.update { it.copy(chatError = error.localizedMessage ?: "Could not send your message. Try again.") }
+            } finally {
+                mutable.update { it.copy(chatPending = false) }
+            }
         }
     }
     fun confirm(proposal: Proposal, approve: Boolean) = action { repository.confirm(proposal,approve) }
