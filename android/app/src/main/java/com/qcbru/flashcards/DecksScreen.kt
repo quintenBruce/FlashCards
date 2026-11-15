@@ -42,36 +42,17 @@ internal fun DecksScreen(state: FlashState, onDeck: (String) -> Unit) {
             .groupingBy { it.deckId }.eachCount()
     }
     val gridState = rememberLazyGridState()
-    val focusManager = LocalFocusManager.current
     fun changeSearch(value: String) {
         search = value
         gridState.requestScrollToItem(0)
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        TextField(
+        SearchInput(
             value = search,
             onValueChange = { changeSearch(it) },
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
-            singleLine = true,
-            label = { Text("Search decks") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            trailingIcon = {
-                if (search.isNotEmpty()) {
-                    IconButton(onClick = { changeSearch("") }) {
-                        Icon(Icons.Default.Close, contentDescription = "Clear search")
-                    }
-                }
-            },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-            shape = CircleShape,
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent
-            )
+            label = "Search decks",
+            modifier = Modifier.padding(vertical = 16.dp)
         )
         if (decks.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.Center) {
@@ -99,6 +80,40 @@ internal fun DecksScreen(state: FlashState, onDeck: (String) -> Unit) {
             }
         }
     }
+}
+
+@Composable
+internal fun SearchInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    val focusManager = LocalFocusManager.current
+    TextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text(label) },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+        trailingIcon = {
+            if (value.isNotEmpty()) {
+                IconButton(onClick = { onValueChange("") }) {
+                    Icon(Icons.Default.Close, contentDescription = "Clear search")
+                }
+            }
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+        shape = CircleShape,
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent
+        )
+    )
 }
 
 @Composable

@@ -32,6 +32,10 @@ Words from class
 
 **Library.** Keep search above a grid of tappable deck cards, newest updates first. A phone shows one column and a wide window fits two. Each card gives the title and optional description up to two lines each, with ellipses for overflow. Show the active card count when it is available locally. Search matches both fields and offers a clear action in the field. Anchor Add deck at the lower trailing edge of the content column. Keep Study history, Reminders and Settings in the app-bar overflow.
 
+The home header now uses the app name, FlashCards. Bottom navigation provides Decks, Study, Reminders and Settings, using cards, graduation cap, bell and gear icons. It also appears on deck detail with Decks selected. Chat and active study sessions keep their focused layouts. These destinations replace the home overflow shortcuts. Switching tabs returns to the destination root without accumulating tab history.
+
+Use the same rounded search input on the library and deck detail. Keep 16 dp visible gaps from header to search, header to deck actions, actions to search, and search to content. Chip touch targets extend into their surrounding gaps. Deck actions and search stay above the scrolling cards.
+
 **Creation sheet.** Use a drag handle and two full-width Material 3 Expressive buttons. Each button has a 64 dp minimum height and can grow with its label. Either selection closes the sheet and continues the chosen creation flow.
 
 ~~~

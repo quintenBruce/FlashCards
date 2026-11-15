@@ -16,6 +16,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -79,26 +81,21 @@ import java.time.format.DateTimeFormatter
     val title=when(current) {
         is DeckRoute -> state.decks.find { it.id==current.id }?.title ?: "Deck"
         is ChatRoute -> if(current.creating) "Create with AI" else "Ask AI"
-        is SecondaryRoute -> current.name
-        else -> "Your decks"
+        is SecondaryRoute -> if(current.name=="Study history") "Study" else current.name
+        else -> stringResource(R.string.app_name)
     }
     Scaffold(snackbarHost={SnackbarHost(snackbar)},
         topBar={if(current !is SessionRoute) TopAppBar(title={Text(title)},
-            navigationIcon={if(stack.size>1) IconButton({stack.removeLastOrNull()}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back")}},
+            navigationIcon={if(current is DeckRoute || current is ChatRoute) IconButton({stack.removeLastOrNull()}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back")}},
             actions={
                 if(state.uid!=null && current is ChatRoute && !current.creating) {
                     IconButton({clearChatDeckId=current.id},enabled=state.online&&!state.busy) {
                         Icon(Icons.Default.DeleteSweep,"Clear conversation history")
                     }
                 }
-                if(state.uid!=null && (current is HomeRoute || currentDeck!=null)) Box {
-                IconButton({menu=true}){Icon(Icons.Default.MoreVert,if(current is DeckRoute)"Deck options"else"More options")}
+                if(state.uid!=null && currentDeck!=null) Box {
+                IconButton({menu=true}){Icon(Icons.Default.MoreVert,"Deck options")}
                 DropdownMenu(menu,{menu=false}) {
-                    if(current is HomeRoute) {
-                        listOf("Study history","Reminders","Settings").forEach { name ->
-                            DropdownMenuItem(text={Text(name)},onClick={menu=false;stack.add(SecondaryRoute(name))})
-                        }
-                    }
                     currentDeck?.let { deck ->
                         DropdownMenuItem(text={Text(if(deckTrash)"Show active cards"else"Card trash")},onClick={menu=false;deckTrash=!deckTrash})
                         DropdownMenuItem(text={Text("Study options")},onClick={menu=false;setupDecks=deck.id;setupFilter="all"},enabled=true)
@@ -107,6 +104,31 @@ import java.time.format.DateTimeFormatter
                     }
                 }
             }})},
+        bottomBar={
+            if(state.uid!=null && current !is ChatRoute && current !is SessionRoute) {
+                NavigationBar {
+                    val destinations = listOf(
+                        Triple(HomeRoute, "Decks", Icons.Default.Style),
+                        Triple(SecondaryRoute("Study history"), "Study", Icons.Default.School),
+                        Triple(SecondaryRoute("Reminders"), "Reminders", Icons.Default.Notifications),
+                        Triple(SecondaryRoute("Settings"), "Settings", Icons.Default.Settings)
+                    )
+                    destinations.forEach { (destination, label, icon) ->
+                        NavigationBarItem(
+                            selected=current==destination || (destination is HomeRoute && current is DeckRoute),
+                            onClick={
+                                if(current!=destination) {
+                                    while(stack.size>1) stack.removeLastOrNull()
+                                    if(destination !is HomeRoute) stack.add(destination)
+                                }
+                            },
+                            icon={Icon(icon,null)},
+                            label={Text(label)}
+                        )
+                    }
+                }
+            }
+        },
         floatingActionButtonPosition=FabPosition.Center,
         floatingActionButton={
             if(state.uid!=null && current is HomeRoute) {
@@ -244,9 +266,12 @@ import java.time.format.DateTimeFormatter
         loading=true
         try {model.repository.prepareDeck(route.id)} catch(e:Exception){error=operationError(e)} finally{loading=false}
     }
-    val cards=state.cards.filter{it.deckId==route.id&&(it.deletedAt!=null)==trash&&!it.purgeRequested&&(it.term.contains(search,true)||it.definition.contains(search,true))}.sortedBy{it.order}
+    val query=search.trim()
+    val cards=state.cards.filter{it.deckId==route.id&&(it.deletedAt!=null)==trash&&!it.purgeRequested&&(it.term.contains(query,true)||it.definition.contains(query,true))}.sortedBy{it.order}
+    val listState=rememberLazyListState()
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=16.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+        // Chips reserve 8 dp above and below their visible surface for their touch targets.
+        Row(Modifier.fillMaxWidth().padding(vertical=8.dp).horizontalScroll(rememberScrollState()).padding(horizontal=16.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             if(deck!=null) AssistChip(
                 onClick=onStudy,
                 enabled=resumableStudy(state.sessions,setOf(route.id))!=null||cards.isNotEmpty(),
@@ -256,8 +281,12 @@ import java.time.format.DateTimeFormatter
                 enabled=deck!=null,label={Text("Add card")},leadingIcon={Icon(Icons.Default.Add,null,Modifier.size(18.dp))})
             AssistChip(onClick=onChat,enabled=deck!=null,label={Text("Ask AI")},leadingIcon={Icon(Icons.Default.ChatBubbleOutline,null,Modifier.size(18.dp))})
         }
-        LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        item{OutlinedTextField(search,{search=it},label={Text("Find a card")},modifier=Modifier.fillMaxWidth(),singleLine=true)}
+        SearchInput(search,{
+            search=it
+            listState.requestScrollToItem(0)
+        },label="Find a card",modifier=Modifier.padding(horizontal=16.dp))
+        Spacer(Modifier.height(16.dp))
+        LazyColumn(Modifier.weight(1f),state=listState,contentPadding=PaddingValues(start=16.dp,end=16.dp,bottom=16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         if(loading&&cards.isEmpty())item{CircularProgressIndicator()}
         if(error.isNotBlank())item{Text(error);TextButton({error="";retry++}){Text("Retry")}}
         if(!loading&&cards.isEmpty()&&error.isBlank())item{Empty("Add your first card","Build this deck one card at a time.")}

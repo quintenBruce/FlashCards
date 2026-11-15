@@ -170,3 +170,9 @@ Ask AI has a header Clear conversation history icon with confirmation. Clearing 
 Add card now opens whenever the deck is loaded, including offline. Saving still uses the existing online mutation path. Save failure preserves the editor inputs.
 
 Two new scope tests cover clearing only the selected deck and finding requests before conversation metadata exists. All 25 Android unit tests and assembleDebug passed. Device installation and visual verification were not performed in this pass.
+
+## Navigation and search spacing — November 15, 2026
+
+Added bottom navigation for Decks, Study, Reminders and Settings on main destinations and deck detail. Home now uses the FlashCards app-name resource. Home and deck detail share a rounded search field with clear and keyboard search actions. Increased header spacing and aligned the deck action, search and content gaps. Search remains pinned on deck detail.
+
+All 25 Android unit tests and assembleDebug passed. Existing ListItem and Slider deprecation warnings remain. Device UI interaction and screenshot tests were not run.
