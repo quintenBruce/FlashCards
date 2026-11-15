@@ -145,3 +145,11 @@ Kotlin compilation and git diff --check passed. No additional unit tests were ad
 - API choice verified against https://developer.android.com/jetpack/androidx/releases/compose-material3 and https://developer.android.com/reference/kotlin/androidx/compose/material3/package-summary .
 - 19 Android unit tests and 32 shared/backend tests passed. Functions compilation and the debug APK build passed. The first Android attempt identified the unavailable Expressive APIs in Material 3 1.4; the dependency update resolved it.
 - No phone installation, app launch or Firebase deployment was performed in this pass. Device layout and TalkBack behavior remain unverified.
+
+## Chat bubble presentation — November 15, 2026
+
+Outgoing messages are right-aligned in primary-container bubbles. AI replies, proposal previews and recovery/error messages are left-aligned in secondary-container bubbles. Bubbles wrap short text and cap their width at 88% of the transcript.
+
+The pending reply uses three dots with staggered 6 dp hops over a 1.2-second cycle. System-disabled animation keeps the dots still. The bubble exposes one accessible “AI is replying” label.
+
+Added conversation previews for normal and large text. assembleDebug and diff whitespace checks passed. No device installation, app launch or visual rendering occurred in this pass.

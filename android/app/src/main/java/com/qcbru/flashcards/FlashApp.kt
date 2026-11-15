@@ -3,6 +3,10 @@ package com.qcbru.flashcards
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -255,15 +259,70 @@ import java.time.format.DateTimeFormatter
     deleteTarget?.let{card->ConfirmDialog("Move card to trash?","You can restore this card from Card trash.",{deleteTarget=null}){deleteTarget=null;model.contentAction("cards",card.id,card.version,"trash")}}
     editor?.let{draft->CardEditor(draft,state.busy,onDismiss={editorJson=null},onSave={model.saveCard(it){editorJson=null}})}
 }
+@Composable internal fun ChatBubble(
+    fromUser: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        Surface(
+            modifier=Modifier.widthIn(max=maxWidth * .88f)
+                .align(if(fromUser) Alignment.CenterEnd else Alignment.CenterStart),
+            shape=MaterialTheme.shapes.medium,
+            color=if(fromUser) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.secondaryContainer,
+        ) {
+            Column(
+                Modifier.padding(14.dp),
+                verticalArrangement=Arrangement.spacedBy(10.dp),
+                content=content,
+            )
+        }
+    }
+}
+
 @Composable internal fun LoadingMessageBubble() {
-    Surface(shape=MaterialTheme.shapes.medium,color=MaterialTheme.colorScheme.surfaceVariant,
-        modifier=Modifier.semantics { contentDescription="AI is replying" }) {
-        Row(Modifier.padding(horizontal=20.dp,vertical=16.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-            repeat(3) {
-                Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.onSurfaceVariant,androidx.compose.foundation.shape.CircleShape))
+    val context=LocalContext.current
+    val reducedMotion=android.provider.Settings.Global.getFloat(
+        context.contentResolver,
+        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+        1f,
+    )==0f
+    ChatBubble {
+        Row(
+            Modifier.height(20.dp).semantics(mergeDescendants=true) {
+                contentDescription="AI is replying"
+            },
+            horizontalArrangement=Arrangement.spacedBy(6.dp),
+            verticalAlignment=Alignment.CenterVertically,
+        ) {
+            if(reducedMotion) {
+                repeat(3) { ReplyDot() }
+            } else {
+                val transition=rememberInfiniteTransition(label="Reply dots")
+                repeat(3) { index ->
+                    val hop by transition.animateFloat(
+                        initialValue=0f,
+                        targetValue=0f,
+                        animationSpec=infiniteRepeatable(keyframes {
+                            durationMillis=1200
+                            0f at index * 150
+                            -6f at index * 150 + 150
+                            0f at index * 150 + 300
+                        }),
+                        label="Reply dot $index",
+                    )
+                    ReplyDot(hop)
+                }
             }
         }
     }
+}
+
+@Composable private fun ReplyDot(hop: Float = 0f) {
+    Box(Modifier.size(8.dp)
+        .graphicsLayer { translationY=hop.dp.toPx() }
+        .background(MaterialTheme.colorScheme.onSecondaryContainer,
+            androidx.compose.foundation.shape.CircleShape))
 }
 @Composable private fun ChatScreen(deckId:String,state:FlashState,model:FlashViewModel,onDeleted:()->Unit,onCreated:()->Unit) {
     val conversationIds=(state.conversations.filter{it.deckId==deckId}.sortedByDescending{it.updatedAt}.map{it.id}+
@@ -283,12 +342,13 @@ import java.time.format.DateTimeFormatter
             if(turns.isEmpty()&&requests.isEmpty())item{Empty("What would you like to learn?","Describe a topic or paste your notes.")}
             items(turns,key={it.id}){turn->
                 Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                    Surface(color=MaterialTheme.colorScheme.primaryContainer,shape=MaterialTheme.shapes.medium){Text(turn.user,Modifier.padding(14.dp))}
-                    Text(turn.assistant)
-                    val proposal=state.proposals.find{it.id==turn.proposalId}
-                    if(turn.proposalId!=null&&proposal==null) {
-                        Text("The approval preview has not loaded yet.",color=MaterialTheme.colorScheme.error)
-                        TextButton({state.chatRequests.find{it.id==turn.id}?.let(model::recoverChat)?:model.refresh()},enabled=!active){Text("Recover approval preview")}
+                    ChatBubble(fromUser=true) { Text(turn.user) }
+                    ChatBubble {
+                        Text(turn.assistant)
+                        val proposal=state.proposals.find{it.id==turn.proposalId}
+                        if(turn.proposalId!=null&&proposal==null) {
+                            Text("The approval preview has not loaded yet.",color=MaterialTheme.colorScheme.error)
+                            TextButton({state.chatRequests.find{it.id==turn.id}?.let(model::recoverChat)?:model.refresh()},enabled=!active){Text("Recover approval preview")}
                     }
                     if(proposal!=null)OutlinedCard(Modifier.fillMaxWidth()) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                         Text("${proposal.operations.size} proposed changes",style=MaterialTheme.typography.titleMedium)
@@ -300,18 +360,21 @@ import java.time.format.DateTimeFormatter
                             OutlinedButton({model.confirm(proposal,false)},enabled=state.online&&!state.busy){Text("Reject")}
                         }else Text(if(proposal.state=="pending")"Expired — ask for a fresh preview"else proposal.state.replaceFirstChar{it.uppercase()})
                     }}
+                    }
                 }
             }
             items(requests.filter{request->turns.none{it.id==request.id}},key={"request_${it.id}"}){request->
                 Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Surface(color=MaterialTheme.colorScheme.primaryContainer,shape=MaterialTheme.shapes.medium){Text(request.message,Modifier.padding(14.dp))}
+                    ChatBubble(fromUser=true) { Text(request.message) }
                     if(active&&request.id==unresolved?.id) LoadingMessageBubble()
-                    else if(request.state=="failed")Text("Request failed. Your deck was not changed.",color=MaterialTheme.colorScheme.error)
-                    else Text("The response has not been confirmed. Check status to recover it.")
-                    if(request.error.isNotBlank())Text(request.error,color=MaterialTheme.colorScheme.error)
+                    else ChatBubble {
+                        if(request.state=="failed")Text("Request failed. Your deck was not changed.",color=MaterialTheme.colorScheme.error)
+                        else Text("The response has not been confirmed. Check status to recover it.")
+                        if(request.error.isNotBlank())Text(request.error,color=MaterialTheme.colorScheme.error)
 
-                    if(!active&&request.state!="failed")OutlinedButton({model.recoverChat(request)},enabled=state.online){Text("Check status / retry safely")}
-                    if(!active&&request.state=="failed")TextButton({draft=request.message}){Text("Use message again")}
+                        if(!active&&request.state!="failed")OutlinedButton({model.recoverChat(request)},enabled=state.online){Text("Check status / retry safely")}
+                        if(!active&&request.state=="failed")TextButton({draft=request.message}){Text("Use message again")}
+                    }
                 }
             }
         }

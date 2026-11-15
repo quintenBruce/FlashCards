@@ -33,3 +33,16 @@ private fun sample()=StudyItem("example_term",FlashCard(term="I miss you",defini
         )),onDeck={})
     }
 }
+
+@Preview(name="Chat bubbles",widthDp=360,heightDp=640,showBackground=true)
+@Preview(name="Chat bubbles large text",widthDp=360,heightDp=640,fontScale=2f,showBackground=true)
+@Composable private fun ChatBubblesPreview() {
+    FlashTheme("light") {
+        Column(Modifier.fillMaxSize().padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+            ChatBubble(fromUser=true) { androidx.compose.material3.Text("Create a deck of travel phrases.") }
+            ChatBubble { androidx.compose.material3.Text("Here are useful phrases for your trip. Review the cards before saving.") }
+            ChatBubble(fromUser=true) { androidx.compose.material3.Text("Add phrases for ordering food, too.") }
+            LoadingMessageBubble()
+        }
+    }
+}
