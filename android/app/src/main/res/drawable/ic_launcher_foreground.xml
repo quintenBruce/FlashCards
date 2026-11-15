@@ -1,0 +1,36 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- The fan stays near the center so launcher masks and motion preserve the mark. -->
+    <group android:rotation="-18" android:pivotX="54" android:pivotY="54">
+        <path android:fillColor="#260B2925"
+            android:pathData="M40,34 H61 Q66,34 66,39 V73 Q66,78 61,78 H40 Q35,78 35,73 V39 Q35,34 40,34 Z" />
+        <path android:fillColor="#79AB98"
+            android:pathData="M39,31 H60 Q65,31 65,36 V70 Q65,75 60,75 H39 Q34,75 34,70 V36 Q34,31 39,31 Z" />
+    </group>
+    <group android:rotation="-7" android:pivotX="54" android:pivotY="54">
+        <path android:fillColor="#200B2925"
+            android:pathData="M44,32 H65 Q70,32 70,37 V73 Q70,78 65,78 H44 Q39,78 39,73 V37 Q39,32 44,32 Z" />
+        <path android:fillColor="#C4DED0"
+            android:pathData="M43,29 H64 Q69,29 69,34 V70 Q69,75 64,75 H43 Q38,75 38,70 V34 Q38,29 43,29 Z" />
+    </group>
+    <group android:rotation="8" android:pivotX="57" android:pivotY="54">
+        <path android:fillColor="#350B2925"
+            android:pathData="M48,33 H69 Q74,33 74,38 V74 Q74,79 69,79 H48 Q43,79 43,74 V38 Q43,33 48,33 Z" />
+        <path android:fillColor="#FFF4DC"
+            android:pathData="M47,30 H68 Q73,30 73,35 V70 Q73,75 68,75 H47 Q42,75 42,70 V35 Q42,30 47,30 Z" />
+        <path android:fillColor="#FFFFFF" android:fillAlpha="0.55"
+            android:pathData="M47,30 H68 Q73,30 73,35 V37 Q73,32 68,32 H47 Q44,32 44,36 V70 Q44,73 47,75 Q42,75 42,70 V35 Q42,30 47,30 Z" />
+        <!-- A turned corner gives the front card a tangible paper edge. -->
+        <path android:fillColor="#E8DBC0"
+            android:pathData="M63,30 H68 Q73,30 73,35 V41 H67 Q63,41 63,37 Z" />
+        <path android:fillColor="#285E59"
+            android:pathData="M50,47 H63 Q64.5,47 64.5,48.5 Q64.5,50 63,50 H50 Q48.5,50 48.5,48.5 Q48.5,47 50,47 Z" />
+        <path android:fillColor="#285E59" android:fillAlpha="0.45"
+            android:pathData="M50,54 H59 Q60.5,54 60.5,55.5 Q60.5,57 59,57 H50 Q48.5,57 48.5,55.5 Q48.5,54 50,54 Z" />
+        <path android:fillColor="#D47A50"
+            android:pathData="M50,64 H56 Q57.5,64 57.5,65.5 Q57.5,67 56,67 H50 Q48.5,67 48.5,65.5 Q48.5,64 50,64 Z" />
+    </group>
+</vector>
