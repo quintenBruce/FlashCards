@@ -2,6 +2,7 @@
 
 - Do not launch the FlashCards app, Android build tools, emulators, or test runners. The user's separate Reminder App build exception does not apply here. The user explicitly authorized Firebase skill installation and Firebase setup tools for the project below.
 - Source inspection, file editing, and Git operations are authorized. Keep all implementation changes committed in Git.
+- Push to the configured upstream after every commit. Install on a connected device only when the user asks.
 - Never commit API keys, signing keys, service account credentials, or App Check debug tokens.
 - Keep responses concise. Record unexecuted verification honestly.
 
