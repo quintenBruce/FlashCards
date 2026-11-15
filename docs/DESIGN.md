@@ -115,3 +115,14 @@ Use state-driven Compose previews with sample data and event callbacks. Keep pre
 | Input and accessibility | TalkBack, external keyboard, reduced motion; both themes and system navigation modes | Predictable focus order, visible focus, one activation per control, accessible gesture alternatives, legible bars and no hidden action. |
 
 Report observed results separately from proposed designs. Do not present a source review or an unrendered preview as a phone screenshot.
+
+## AI creation interaction rules — November 15, 2026
+
+- Add deck opens a sheet with two full-width buttons at least 64 dp high. The sheet has no title.
+- Create with AI opens one creation draft for the signed-in user. If one exists, show Resume draft and Start fresh. Dismissal preserves the draft.
+- Resume preserves the conversation, sent messages, proposal and recoverable request ID. Start fresh cancels local sends, tombstones old conversations, removes their cached messages and proposals, and assigns a new draft ID. An already-saved deck is never discarded.
+- Legacy multiple drafts resolve to the canonical stored draft, otherwise the newest unfinished conversation/request. Starting fresh retires the old unfinished conversations.
+- Chat offers no numbered conversation selectors or New conversation action.
+- While the response is pending, show an assistant bubble with three dots and an accessible “AI is replying” label. Failures retain their recovery controls.
+- The server claims a user-scoped active creation slot transactionally before any provider call. A second creation conversation is rejected until the first is discarded or its deck is saved. Approval checks the conversation tombstone, so discarded proposals cannot mutate cards.
+- Android changes require an updated APK. Cross-device enforcement and discarded-proposal checks require deployment of the changed sendDeckMessage and confirmProposal functions to flashcards-6b1ac.

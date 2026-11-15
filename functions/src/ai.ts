@@ -50,6 +50,20 @@ export async function chat(uid: string, data: Record<string, any>) {
   const claimed = await db.runTransaction(async tx => {
     const previous = await tx.get(ref);
     if (previous.exists) { sameRequest(previous, fingerprint); return false; }
+    // Serialize creation conversations across devices for this user.
+    const deck = await tx.get(root(uid).collection('decks').doc(deckId));
+    if (!deck.exists) {
+      const slot = root(uid).collection('creation').doc('active');
+      const active = await tx.get(slot);
+      if (active.exists && active.get('conversationId') !== conversationId) {
+        const oldDeck = await tx.get(root(uid).collection('decks').doc(active.get('deckId')));
+        const oldConversation = await tx.get(root(uid).collection('conversations').doc(active.get('conversationId')));
+        if (!oldDeck.exists && oldConversation.get('deletedAt') == null) {
+          throw new HttpsError('failed-precondition', 'Resume your existing draft or start fresh before creating another.');
+        }
+      }
+      tx.set(slot, { deckId, conversationId });
+    }
     tx.create(ref, { fingerprint, conversationId, deckId, state: 'pending', createdAt: Date.now() });
     return true;
   });
@@ -164,6 +178,8 @@ export async function approve(uid: string, data: Record<string, any>) {
     if (!p.exists) throw new HttpsError('not-found', 'Proposal not found');
     if (p.get('state') === 'applied') return p.get('result');
     if (p.get('state') !== 'pending' || p.get('expiresAt') <= Date.now()) throw new HttpsError('failed-precondition', 'Proposal expired or rejected');
+    const conversation = await tx.get(root(uid).collection('conversations').doc(p.get('conversationId')));
+    if (conversation.get('deletedAt') != null) throw new HttpsError('failed-precondition', 'This draft was discarded');
     if (data.approve !== true) { tx.update(proposal, { state: 'rejected' }); return { rejected: true }; }
     const operations = p.get('operations') as Operation[];
     const deckRef = root(uid).collection('decks').doc(p.get('deckId')), deck = await tx.get(deckRef);

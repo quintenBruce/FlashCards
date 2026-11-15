@@ -49,6 +49,7 @@ import java.time.format.DateTimeFormatter
     onSpeak: (String,String) -> Unit, onVoices: () -> List<Pair<String,String>>) {
     val stack = rememberNavBackStack(HomeRoute)
     var addSheet by rememberSaveable { mutableStateOf(false) }
+    var draftPrompt by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var newDeck by rememberSaveable { mutableStateOf(false) }
     var editDeckId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -59,7 +60,7 @@ import java.time.format.DateTimeFormatter
         if(state.notice.isNotEmpty()) { snackbar.showSnackbar(state.notice); model.clearNotice() }
     }
     LaunchedEffect(state.uid) {
-        if(state.uid == null) { stack.clear(); stack.add(HomeRoute); addSheet=false; newDeck=false; editDeckId=null; setupDecks=null }
+        if(state.uid == null) { stack.clear(); stack.add(HomeRoute); addSheet=false; draftPrompt=false; newDeck=false; editDeckId=null; setupDecks=null }
     }
     LaunchedEffect(state.pendingReminder,state.reminders) {
         state.reminders.find { it.id==state.pendingReminder }?.let {
@@ -108,7 +109,7 @@ import java.time.format.DateTimeFormatter
                                     else model.startSession(setOf(key.id),"all","term",true,"practice",20){if(stack.lastOrNull()==key)stack.add(SessionRoute(it))}
                                 },
                                 onOptions={setupDecks=key.id;setupFilter="all"},onChat={stack.add(ChatRoute(key.id))},onDeleted={if(stack.lastOrNull()==key)stack.removeLastOrNull()})
-                            is ChatRoute -> ChatScreen(key.id,latest,model,onDeleted={if(stack.lastOrNull()==key){stack.removeLastOrNull();if(stack.lastOrNull() is DeckRoute)stack.removeLastOrNull()}},onResumeDraft={id->if(stack.lastOrNull()==key){stack.removeLastOrNull();stack.add(ChatRoute(id,true))}},onCreated={
+                            is ChatRoute -> ChatScreen(key.id,latest,model,onDeleted={if(stack.lastOrNull()==key){stack.removeLastOrNull();if(stack.lastOrNull() is DeckRoute)stack.removeLastOrNull()}},onCreated={
                                 if(key.creating && stack.lastOrNull()==key){stack.removeLastOrNull();stack.add(DeckRoute(key.id))}
                             })
                             is SessionRoute -> SessionScreen(latest.sessions.find{it.id==key.id},latest,model,onExit={stack.removeLastOrNull()},onSpeak=onSpeak)
@@ -120,11 +121,12 @@ import java.time.format.DateTimeFormatter
     }
     if(addSheet) ModalBottomSheet(onDismissRequest={addSheet=false}) {
         Column(Modifier.fillMaxWidth().padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text("Add a deck",style=MaterialTheme.typography.titleLarge)
-            TextButton({addSheet=false;newDeck=true},Modifier.fillMaxWidth()){Text("Create manually")}
-            TextButton({addSheet=false;stack.add(ChatRoute(newId(),true))},Modifier.fillMaxWidth()){Text("Create with AI")}
+
+            Button({addSheet=false;newDeck=true},Modifier.fillMaxWidth().heightIn(min=64.dp)){Text("Create manually")}
+            Button({addSheet=false;model.inspectCreation{exists->if(exists)draftPrompt=true else model.openCreation(false){stack.add(ChatRoute(it,true))}}},Modifier.fillMaxWidth().heightIn(min=64.dp),enabled=!state.busy){Text("Create with AI")}
         }
     }
+    if(draftPrompt) AlertDialog(onDismissRequest={draftPrompt=false},title={Text("Continue your draft?")},text={Text("Resume your AI deck or discard it and start fresh.")},confirmButton={TextButton({draftPrompt=false;model.openCreation(false){stack.add(ChatRoute(it,true))}}){Text("Resume draft")}},dismissButton={TextButton({draftPrompt=false;model.openCreation(true){stack.add(ChatRoute(it,true))}}){Text("Start fresh")}})
     if(newDeck||editDeckId!=null) DeckEditor(state.decks.find{it.id==editDeckId},state.busy,
         onDismiss={newDeck=false;editDeckId=null},onSave={deck->
             val creating=newDeck
@@ -241,25 +243,29 @@ import java.time.format.DateTimeFormatter
     deleteTarget?.let{card->ConfirmDialog("Move card to trash?","You can restore this card from Card trash.",{deleteTarget=null}){deleteTarget=null;model.contentAction("cards",card.id,card.version,"trash")}}
     editor?.let{draft->CardEditor(draft,state.busy,onDismiss={editorJson=null},onSave={model.saveCard(it){editorJson=null}})}
 }
-@Composable private fun ChatScreen(deckId:String,state:FlashState,model:FlashViewModel,onDeleted:()->Unit,onResumeDraft:(String)->Unit,onCreated:()->Unit) {
+@Composable internal fun LoadingMessageBubble() {
+    Surface(shape=MaterialTheme.shapes.medium,color=MaterialTheme.colorScheme.surfaceVariant,
+        modifier=Modifier.semantics { contentDescription="AI is replying" }) {
+        Row(Modifier.padding(horizontal=20.dp,vertical=16.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            repeat(3) {
+                Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.onSurfaceVariant,androidx.compose.foundation.shape.CircleShape))
+            }
+        }
+    }
+}
+@Composable private fun ChatScreen(deckId:String,state:FlashState,model:FlashViewModel,onDeleted:()->Unit,onCreated:()->Unit) {
     val conversationIds=(state.conversations.filter{it.deckId==deckId}.sortedByDescending{it.updatedAt}.map{it.id}+
         state.chatRequests.filter{it.deckId==deckId}.sortedByDescending{it.createdAt}.map{it.conversationId}).distinct()
     var selectedConversation by rememberSaveable(deckId){mutableStateOf<String?>(null)}
-    val conversation=selectedConversation?:conversationIds.firstOrNull()?:"draft_$deckId"
+    val conversation=selectedConversation?:model.repository.preferences.getString("creation_conversation_${state.uid}_$deckId",null)?:conversationIds.firstOrNull()?:"draft_$deckId"
     val requests=state.chatRequests.filter{it.conversationId==conversation}.sortedBy{it.createdAt}
     val active=conversation in state.activeChats
     val unresolved=requests.lastOrNull{it.state in listOf("pending","uncertain")}
     val listState=androidx.compose.foundation.lazy.rememberLazyListState()
     LaunchedEffect(conversation,state.turns.size,requests,active){if(listState.layoutInfo.totalItemsCount>0&&!listState.canScrollForward)listState.animateScrollToItem(listState.layoutInfo.totalItemsCount-1)}
     var draft by rememberSaveable(deckId,conversation){mutableStateOf("")};var details by rememberSaveable{mutableStateOf<String?>(null)}
-    var deleting by rememberSaveable{mutableStateOf(false)}
+
     Column(Modifier.fillMaxSize().imePadding()) {
-        if(state.decks.none{it.id==deckId})state.chatRequests.filter{r->r.deckId!=deckId&&state.decks.none{it.id==r.deckId}}.distinctBy{it.deckId}.take(3).forEach{request->TextButton({onResumeDraft(request.deckId)}){Text("Resume draft: ${request.message.take(45)}")}}
-        if(conversationIds.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=12.dp)) {
-            TextButton({selectedConversation="${deckId}_${newId()}"},enabled=!active){Text("New conversation")}
-            conversationIds.forEachIndexed{index,cid->FilterChip(conversation==cid,{selectedConversation=cid},label={Text("Chat ${index+1}")})}
-            TextButton({deleting=true},enabled=!active){Text("Delete chat")}
-        }
         LazyColumn(Modifier.weight(1f),state=listState,contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             val turns=state.turns.filter{it.conversationId==conversation}.sortedBy{it.createdAt}
             if(turns.isEmpty()&&requests.isEmpty())item{Empty("What would you like to learn?","Describe a topic or paste your notes.")}
@@ -287,7 +293,7 @@ import java.time.format.DateTimeFormatter
             items(requests.filter{request->turns.none{it.id==request.id}},key={"request_${it.id}"}){request->
                 Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Surface(color=MaterialTheme.colorScheme.primaryContainer,shape=MaterialTheme.shapes.medium){Text(request.message,Modifier.padding(14.dp))}
-                    if(active&&request.id==unresolved?.id){LinearProgressIndicator(Modifier.fillMaxWidth());Text("Sending and creating your response… This can take a few minutes.")}
+                    if(active&&request.id==unresolved?.id) LoadingMessageBubble()
                     else if(request.state=="failed")Text("Request failed. Your deck was not changed.",color=MaterialTheme.colorScheme.error)
                     else Text("The response has not been confirmed. Check status to recover it.")
                     if(request.error.isNotBlank())Text(request.error,color=MaterialTheme.colorScheme.error)
@@ -299,10 +305,9 @@ import java.time.format.DateTimeFormatter
         }
         Row(Modifier.padding(12.dp),verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(draft,{draft=it},label={Text(if(state.decks.any{it.id==deckId})"Ask about this deck…"else"Describe your deck…")},modifier=Modifier.weight(1f),maxLines=5,enabled=!active,isError=draft.length>8000)
-            Button({selectedConversation=conversation;model.sendMessage(deckId,conversation,draft);draft=""},enabled=state.online&&!active&&unresolved==null&&draft.isNotBlank()&&draft.length<=8000){Text(if(active)"Sending…"else"Send")}
+            Button({selectedConversation=conversation;model.sendMessage(deckId,conversation,draft);draft=""},enabled=state.online&&!active&&unresolved==null&&draft.isNotBlank()&&draft.length<=8000){Text("Send")}
         }
     }
-    if(deleting)ConfirmDialog("Delete conversation?","This removes its messages and pending proposals.",{deleting=false}){model.deleteConversation(conversation);selectedConversation="${deckId}_${newId()}";deleting=false}
 }
 @Composable private fun SessionScreen(session:StudySession?,state:FlashState,model:FlashViewModel,onExit:()->Unit,onSpeak:(String,String)->Unit) {
     if(session==null){Column(Modifier.fillMaxSize().padding(24.dp),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){

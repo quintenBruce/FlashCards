@@ -46,9 +46,15 @@ beforeEach(() => {
 });
 describe('atomic AI approval', () => {
   function proposal() {
-    memory.records.set('users/me/proposals/p',{deckId:'deck',deckVersion:1,state:'pending',expiresAt:Date.now()+60000,
+    memory.records.set('users/me/proposals/p',{conversationId:'conversation',deckId:'deck',deckVersion:1,state:'pending',expiresAt:Date.now()+60000,
       operations:[{kind:'edit_card',targetId:'card',expectedVersion:1,after:{...card,definition:'un año'},before:card}]});
   }
+  it('cannot apply a proposal from a discarded draft', async () => {
+    proposal();
+    memory.records.set('users/me/conversations/conversation',{deletedAt:Date.now()});
+    await expect(approve('me',{proposalId:'p',approve:true})).rejects.toHaveProperty('code','failed-precondition');
+    expect(memory.records.get('users/me/cards/card').definition).toBe('año');
+  });
   it('rejects without changing content', async () => {
     proposal(); await approve('me',{proposalId:'p',approve:false});
     expect(memory.records.get('users/me/cards/card').definition).toBe('año');

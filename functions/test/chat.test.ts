@@ -89,3 +89,40 @@ describe('chat request recovery', () => {
     expect(provider.create).not.toHaveBeenCalled();
   });
 });
+
+describe('one creation draft per user', () => {
+  it('rejects a second creation conversation before calling the provider', async () => {
+    await chat('me',request);
+    await expect(chat('me',{...request,requestId:'other',deckId:'other',conversationId:'other'}))
+      .rejects.toHaveProperty('code','failed-precondition');
+    expect(provider.create).toHaveBeenCalledTimes(1);
+  });
+  it('allows a fresh conversation after the old draft is discarded', async () => {
+    await chat('me',request);
+    memory.records.set('users/me/conversations/conversation',{deckId:'draft',deletedAt:Date.now()});
+    expect(await chat('me',{...request,requestId:'fresh',deckId:'fresh',conversationId:'fresh'}))
+      .toMatchObject({state:'succeeded'});
+  });
+  it('allows a new creation after the previous deck is saved', async () => {
+    await chat('me',request);
+    memory.records.set('users/me/decks/draft',{id:'draft'});
+    expect(await chat('me',{...request,requestId:'fresh',deckId:'fresh',conversationId:'fresh'}))
+      .toMatchObject({state:'succeeded'});
+  });
+  it('isolates the creation slot by user', async () => {
+    await chat('me',request);
+    memory.records.set('access/other',{enabled:true});
+    expect(await chat('other',{...request,requestId:'other'})).toMatchObject({state:'succeeded'});
+  });
+});
+
+describe('creation concurrency', () => {
+  it('claims one creation slot for simultaneous conversations', async () => {
+    const results=await Promise.allSettled([
+      chat('me',request),
+      chat('me',{...request,requestId:'second',deckId:'second',conversationId:'second'}),
+    ]);
+    expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+    expect(provider.create).toHaveBeenCalledTimes(1);
+  });
+});

@@ -138,3 +138,16 @@ fun JsonElement.toCloud(): Any? = when (this) {
     is JsonArray -> map { it.toCloud() }
     is JsonPrimitive -> if (isString) content else booleanOrNull ?: longOrNull ?: doubleOrNull ?: content
 }
+
+/** A saved deck is never a creation draft. Resolve old multiple drafts consistently. */
+fun creationDraftId(decks:List<Deck>, conversations:List<Conversation>, requests:List<ChatRequest>, savedId:String?):String? {
+    val deckIds=decks.map{it.id}.toSet()
+    if(savedId!=null && savedId !in deckIds)return savedId
+    return (conversations.filter{it.deletedAt==null}.map{it.deckId to it.updatedAt}+
+        requests.map{it.deckId to it.createdAt})
+        .filter{it.first !in deckIds}.maxByOrNull{it.second}?.first
+        ?: savedId?.takeUnless{it in deckIds}
+}
+
+fun requestNeedsRecovery(request:ChatRequest, turns:List<Turn>):Boolean =
+    request.state in listOf("pending","uncertain") && turns.none{it.id==request.id}

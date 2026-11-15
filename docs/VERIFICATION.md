@@ -117,3 +117,13 @@ Remaining work from the design/audit
 - Per-screen Room subscriptions, durable conflict-resolution UI and a complete lifecycle/concurrency regression suite.
 - Oversized session growth after grading, atomic reordering, and full draft naming/history polish.
 - Study currently defaults to 20 cards and allows up to 100 per session, including practice and browse. This bounds snapshot size and can be adjusted through Study options.
+
+## Single AI draft verification — November 15, 2026
+
+- Added five Android unit tests covering canonical draft selection, legacy migration, saved/trash deck exclusion, request-only draft recovery and completed-turn reconciliation.
+- Added backend tests for second-conversation rejection, simultaneous claims, discarded-draft replacement, saved-deck completion, user isolation and discarded-proposal approval.
+- Existing tests cover directional confidence, reveal requirements, bounded practice, archived decks, answer normalization, content versions, CSV, DST, transactional approvals, review conflicts, budgets and provider receipt recovery.
+- 28 shared/backend unit tests passed. Functions TypeScript compilation passed. 14 Android unit tests passed and the debug APK assembled successfully.
+- Tests ran under local Node 24; Functions declares Node 22. No live provider calls were made by the mocked unit tests.
+- UI uses a three-dot loading bubble and a title-free sheet with 64 dp creation buttons. Existing drafts prompt Resume draft / Start fresh. Multiple-conversation controls were removed.
+- Backend changes have not been deployed. The new APK has not been installed or launched in this pass.

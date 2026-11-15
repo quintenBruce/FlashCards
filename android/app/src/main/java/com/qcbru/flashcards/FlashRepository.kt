@@ -350,11 +350,26 @@ class FlashRepository(private val context: Context, val database: FlashDatabase)
     suspend fun deleteReminder(reminder: StudyReminder) {
         call("applyReminderAction", mapOf("requestId" to newId(),"id" to reminder.id,"expectedVersion" to reminder.version,"action" to "delete"))
     }
+    suspend fun remoteCreationDraft():String? {
+        val user=uid ?: return null
+        if(!online())return null
+        val slot=cloud.collection("users").document(user).collection("creation").document("active").get(Source.SERVER).await()
+        val deckId=slot.getString("deckId") ?: return null
+        val conversationId=slot.getString("conversationId") ?: return null
+        val deck=cloud.collection("users").document(user).collection("decks").document(deckId).get(Source.SERVER).await()
+        val conversation=cloud.collection("users").document(user).collection("conversations").document(conversationId).get(Source.SERVER).await()
+        if(!deck.exists()&&conversation.get("deletedAt")==null) {
+            preferences.edit().putString("creation_conversation_${user}_$deckId",conversationId).commit()
+            return deckId
+        }
+        return null
+    }
     suspend fun deleteConversation(conversationId: String) {
         val user=uid ?: return
         call("deleteConversation",mapOf("id" to conversationId))
+        withContext(Dispatchers.IO){dao.remove(user,"conversations",conversationId)}
         withContext(Dispatchers.IO) {
-            if(uid==user)for(kind in listOf("chat_requests","chat_turns","chat_proposals"))for(row in dao.list(user,kind)) {
+            if(uid==user)for(kind in listOf("chat_requests","chat_turns","chat_proposals","turns","proposals"))for(row in dao.list(user,kind)) {
                 if(Codec.parseToJsonElement(row.body).jsonObject["conversationId"]?.jsonPrimitive?.content==conversationId)dao.remove(user,kind,row.id)
             }
         }

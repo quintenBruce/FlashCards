@@ -177,8 +177,36 @@ class FlashViewModel(application: Application) : AndroidViewModel(application) {
         val old = current.grades[key] ?: return@studyAction current
         repository.persistSession(current.copy(grades = current.grades+(key to old.copy(verdict = verdict,explanation = "Grade corrected by you",manual = true)),revision = current.revision+1))
     }
+    fun creationDraft():String? {
+        val s=state.value
+        return creationDraftId(s.decks,s.conversations,s.chatRequests,
+            repository.preferences.getString("creation_draft_${s.uid}",null))
+    }
+    fun inspectCreation(done:(Boolean)->Unit) = action {
+        repository.remoteCreationDraft()?.let{repository.preferences.edit().putString("creation_draft_${state.value.uid}",it).commit()}
+        done(creationDraft()!=null)
+    }
+    fun openCreation(fresh:Boolean,done:(String)->Unit) = action {
+        val user=state.value.uid ?: return@action
+        val current=repository.remoteCreationDraft() ?: creationDraft()
+        if(fresh) {
+            val deckIds=state.value.decks.map{it.id}.toSet()
+            val old=state.value.conversations.filter{it.deckId !in deckIds}.map{it.id}+
+                state.value.chatRequests.filter{it.deckId !in deckIds}.map{it.conversationId}+
+                listOfNotNull(current?.let{repository.preferences.getString("creation_conversation_${user}_$it","draft_$it")})
+            old.distinct().forEach{conversationId->
+                chatJobs.remove(conversationId)?.cancelAndJoin()
+                repository.deleteConversation(conversationId)
+            }
+        }
+        val id=if(fresh) newId() else current ?: newId()
+        if(repository.uid==user) {
+            repository.preferences.edit().putString("creation_draft_$user",id).commit()
+            done(id)
+        }
+    }
     fun sendMessage(deckId: String, conversationId: String, message: String) {
-        val unresolved = state.value.chatRequests.firstOrNull { it.conversationId==conversationId && it.state in listOf("pending","uncertain") }
+        val unresolved = state.value.chatRequests.firstOrNull { it.conversationId==conversationId && requestNeedsRecovery(it,state.value.turns) }
         if (unresolved != null) { notice("Check the previous request's status before sending another message."); return }
         if (message.isBlank() || message.length>8000) { notice("Enter a message of at most 8,000 characters."); return }
         runChat(ChatRequest(conversationId=conversationId,deckId=deckId,message=message.trim()),false)
