@@ -34,6 +34,10 @@ Words from class
 
 The home header now uses the app name, FlashCards. Bottom navigation provides Decks, Study, Reminders and Settings, using cards, graduation cap, bell and gear icons. It also appears on deck detail with Decks selected. Chat and active study sessions keep their focused layouts. These destinations replace the home overflow shortcuts. Switching tabs returns to the destination root without accumulating tab history.
 
+Footer destinations use a short crossfade with 120 ms entry and 90 ms exit. Detail navigation keeps the Navigation 3 transitions.
+
+**Reminders.** Use one Add reminder button and cards showing time, repeat, deck names and next alert or paused/completed status. Tap a card to edit. Pause active schedules with a switch and keep Delete in the card menu. Completed one-time reminders open for rescheduling. The editor starts with a time picker, Daily/Days/Once repeat choices and deck selection. Date selection uses a calendar. More options contains the name, review filter and the existing time zone, with an action to adopt the device time zone. Existing reminder IDs, versions, selections and pause state survive editing. An empty deck selection means all decks. Explain unavailable selected decks and require the user to update their selection before saving. Show notification permission guidance only when notifications are disabled.
+
 Use the same rounded search input on the library and deck detail. Keep 16 dp visible gaps from header to search, header to deck actions, actions to search, and search to content. Chip touch targets extend into their surrounding gaps. Deck actions and search stay above the scrolling cards.
 
 **Creation sheet.** Use a drag handle and two full-width Material 3 Expressive buttons. Each button has a 64 dp minimum height and can grow with its label. Either selection closes the sheet and continues the chosen creation flow.

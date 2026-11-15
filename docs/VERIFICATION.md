@@ -176,3 +176,11 @@ Two new scope tests cover clearing only the selected deck and finding requests b
 Added bottom navigation for Decks, Study, Reminders and Settings on main destinations and deck detail. Home now uses the FlashCards app-name resource. Home and deck detail share a rounded search field with clear and keyboard search actions. Increased header spacing and aligned the deck action, search and content gaps. Search remains pinned on deck detail.
 
 All 25 Android unit tests and assembleDebug passed. Existing ListItem and Slider deprecation warnings remain. Device UI interaction and screenshot tests were not run.
+
+## Faster footer navigation and reminder redesign — November 15, 2026
+
+Footer destinations crossfade with a 120 ms entry and 90 ms exit. The reminder page now shows time, repeat and deck scope with pause switches, tap-to-edit and a Delete overflow action. Completed one-time reminders open for rescheduling. The editor uses structured time and date pickers, three repeat choices, deck selection and collapsed optional details. Unsaved reminder drafts survive recreation and confirm dismissal. Notification guidance checks app and channel settings when the page resumes.
+
+Extracted reminder validation and the existing local clock for unit testing. Paused and deleted reminders are excluded from notification delivery and snoozing. Local snoozes record the reminder version and are excluded from rescheduling after an edit.
+
+All 39 Android unit tests passed, including 14 reminder tests for validation, selected days/decks, one-time expiration, time zones, daylight saving, pause state, stale snoozes and next occurrence calculation. assembleDebug and git diff --check passed. Device visual interaction and delivery of a real timed notification were not exercised.

@@ -8,6 +8,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -142,7 +144,18 @@ import java.time.format.DateTimeFormatter
             Box(Modifier.widthIn(max=760.dp).fillMaxSize()) {
                 if(state.uid==null) Welcome(onSignIn,state.busy)
                 else NavDisplay(backStack=stack,onBack={if(stack.size>1)stack.removeLastOrNull()},entryProvider={ key ->
-                    NavEntry(key) {
+                    val tabTransitions = if(key is HomeRoute || key is SecondaryRoute) {
+                        NavDisplay.transitionSpec {
+                            if(isFooterDestination(initialState.key) && isFooterDestination(targetState.key)) {
+                                fadeIn(tween(120)) togetherWith fadeOut(tween(90))
+                            } else null
+                        } + NavDisplay.popTransitionSpec {
+                            if(isFooterDestination(initialState.key) && isFooterDestination(targetState.key)) {
+                                fadeIn(tween(120)) togetherWith fadeOut(tween(90))
+                            } else null
+                        }
+                    } else emptyMap()
+                    NavEntry(key,metadata=tabTransitions) {
                         val latest by model.state.collectAsStateWithLifecycle()
                         when(key) {
                             is HomeRoute -> DecksScreen(latest,onDeck={stack.add(DeckRoute(it))})
@@ -220,6 +233,7 @@ import java.time.format.DateTimeFormatter
         }
     })
 }
+private fun isFooterDestination(key:Any) = key is HomeRoute || key is SecondaryRoute
 @Composable private fun Welcome(onSignIn:()->Unit,busy:Boolean) {
     Column(Modifier.fillMaxSize().padding(28.dp),verticalArrangement=Arrangement.Center) {
         Icon(Icons.Default.Style,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(64.dp))
@@ -597,50 +611,6 @@ import java.time.format.DateTimeFormatter
         Button({onSave(base.copy(term=term,definition=definition,example=example,explanation=explanation,termAlternatives=termAlt.lines().filter{it.isNotBlank()},definitionAlternatives=definitionAlt.lines().filter{it.isNotBlank()}))},enabled=term.isNotBlank()&&term.length<=2000&&definition.isNotBlank()&&definition.length<=4000&&example.length<=2000&&explanation.length<=4000&&listOf(termAlt,definitionAlt).all{value->value.lines().filter{it.isNotBlank()}.let{it.size<=20&&it.all{line->line.length<=1000}}}&&!busy,modifier=Modifier.fillMaxWidth()){Text("Save card")}
     }
 }
-@Composable private fun RemindersScreen(state:FlashState,model:FlashViewModel,onNotifications:()->Unit) {
-    var editId by rememberSaveable{mutableStateOf<String?>(null)};var creating by rememberSaveable{mutableStateOf(false)}
-    var deleting by rememberSaveable{mutableStateOf<String?>(null)}
-    LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        item{Heading("Make time to remember","A gentle nudge at the time you choose.")}
-        item{Button({creating=true;onNotifications()},enabled=state.online&&!state.busy){Text("New reminder")}}
-        if(state.reminders.isEmpty())item{Empty("Your schedule is open","Remind yourself to review a deck, struggling cards, or words you already know.")}
-        items(state.reminders,key={it.id}){r->OutlinedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-            Text(r.title,style=MaterialTheme.typography.titleMedium)
-            Text("${r.filter} · ${if(r.deckIds.isEmpty())"All active decks"else"${r.deckIds.size} selected decks"}")
-            Text(r.nextAt?.let{formatDate(it,r.schedule.timeZone)}?:"No future alert")
-            Row{TextButton({editId=r.id},enabled=state.online&&!state.busy){Text("Edit")};TextButton({deleting=r.id},enabled=state.online&&!state.busy){Text("Delete")}}
-        }}}
-    }
-    if(creating||editId!=null)ReminderEditor(state.reminders.find{it.id==editId},state,onDismiss={creating=false;editId=null},onSave={r->model.saveReminder(r){creating=false;editId=null}})
-    deleting?.let{id->ConfirmDialog("Delete reminder?","Future alerts for this reminder will stop.",{deleting=null}){state.reminders.find{it.id==id}?.let(model::deleteReminder);deleting=null}}
-}
-@Composable private fun ReminderEditor(original:StudyReminder?,state:FlashState,onDismiss:()->Unit,onSave:(StudyReminder)->Unit) {
-    val base=remember(original?.id){original?:StudyReminder()}
-    var title by rememberSaveable{mutableStateOf(base.title)};var kind by rememberSaveable{mutableStateOf(base.schedule.kind)}
-    var time by rememberSaveable{mutableStateOf("%02d:%02d".format(base.schedule.hour,base.schedule.minute))}
-    var date by rememberSaveable{mutableStateOf(base.schedule.at?.let{Instant.ofEpochMilli(it).atZone(ZoneId.of(base.schedule.timeZone)).toLocalDate().toString()}?:LocalDate.now().toString())}
-    var zone by rememberSaveable{mutableStateOf(base.schedule.timeZone)};var filter by rememberSaveable{mutableStateOf(base.filter)}
-    var days by rememberSaveable{mutableStateOf(base.schedule.weekdays)};var decks by rememberSaveable{mutableStateOf(base.deckIds)}
-    var enabled by rememberSaveable{mutableStateOf(base.enabled)};var error by rememberSaveable{mutableStateOf("")}
-    FormDialog(if(original==null)"New reminder"else"Edit reminder",onDismiss) {
-        Field("Title",title,{title=it});Choice("Repeat",listOf("once","daily","weekdays"),kind,{kind=it})
-        if(kind=="once")Field("Date (YYYY-MM-DD)",date,{date=it})
-        Field("Time (24-hour HH:mm)",time,{time=it});Field("Timezone",zone,{zone=it})
-        if(kind=="weekdays")Row(Modifier.horizontalScroll(rememberScrollState())){(1..7).forEach{day->FilterChip(day in days,{days=if(day in days)days-day else days+day},label={Text(DayOfWeek.of(day).name.take(3).lowercase())})}}
-        Choice("Review",listOf("all","struggling","known","starred","unrated"),filter,{filter=it})
-        Text("No deck selection includes all active decks.")
-        state.decks.filter{it.deletedAt==null}.forEach{d->Row(verticalAlignment=Alignment.CenterVertically){Checkbox(d.id in decks,{decks=if(it)decks+d.id else decks-d.id});Text(d.title)}}
-        Row(verticalAlignment=Alignment.CenterVertically){Switch(enabled,{enabled=it});Text("Enabled")}
-        if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
-        Button({runCatching {
-            val local=LocalTime.parse(time);val timezone=ZoneId.of(zone)
-            require(kind!="weekdays"||days.isNotEmpty()){ "Choose at least one weekday" }
-            val at=if(kind=="once")LocalDate.parse(date).atTime(local).atZone(timezone).toInstant().toEpochMilli()else null
-            require(at==null||at>System.currentTimeMillis()){ "Choose a future time" }
-            onSave(base.copy(title=title,deckIds=decks,filter=filter,enabled=enabled,schedule=Schedule(kind,zone,local.hour,local.minute,days,at)))
-        }.onFailure{error=it.message?:"Check the schedule"}},enabled=title.isNotBlank()&&!state.busy){Text("Save reminder")}
-    }
-}
 @Composable private fun SettingsScreen(state:FlashState,model:FlashViewModel,onVoices:()->List<Pair<String,String>>) {
     var delete by rememberSaveable{mutableStateOf(false)};var confirmation by rememberSaveable{mutableStateOf("")}
     var trash by rememberSaveable{mutableStateOf(false)}
@@ -667,7 +637,7 @@ import java.time.format.DateTimeFormatter
     val limit=when(label){"Title"->200;"Description"->2000;"Front"->2000;"Back","Explanation"->4000;"Example sentence"->2000;else->Int.MAX_VALUE}
     OutlinedTextField(value,onValue,label={Text(label)},isError=value.length>limit,supportingText={if(value.length>limit)Text("Use $limit characters or fewer")},singleLine=single,minLines=if(single)1 else 2,maxLines=if(single)1 else 6,modifier=Modifier.fillMaxWidth())
 }
-@Composable private fun FormDialog(title:String,onDismiss:()->Unit,dirty:Boolean=false,content:@Composable ColumnScope.()->Unit) {
+@Composable internal fun FormDialog(title:String,onDismiss:()->Unit,dirty:Boolean=false,content:@Composable ColumnScope.()->Unit) {
     var discard by remember{mutableStateOf(false)}
     val close={if(dirty)discard=true else onDismiss()}
     if(discard)ConfirmDialog("Discard changes?","Your unsaved changes will be lost.",{discard=false}){discard=false;onDismiss()}
@@ -676,7 +646,7 @@ import java.time.format.DateTimeFormatter
         content()
     }}}
 }
-@Composable private fun ConfirmDialog(title:String,body:String,onDismiss:()->Unit,onConfirm:()->Unit) {
+@Composable internal fun ConfirmDialog(title:String,body:String,onDismiss:()->Unit,onConfirm:()->Unit) {
     AlertDialog(onDismissRequest=onDismiss,title={Text(title)},text={Text(body)},confirmButton={TextButton(onConfirm){Text("Confirm")}},dismissButton={TextButton(onDismiss){Text("Cancel")}})
 }
 private fun formatDate(at:Long,zone:String)=runCatching{Instant.ofEpochMilli(at).atZone(ZoneId.of(zone)).format(DateTimeFormatter.ofPattern("EEE, MMM d · h:mm a z"))}.getOrDefault("Invalid schedule")
